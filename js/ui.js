@@ -2,6 +2,20 @@
 
 const UI = {
   profile: { name: '', emoji: EMOJI_LIST[0], color: PLAYER_COLORS[0] },
+  loadProfile() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('killiards-profile') || 'null'); } catch (e) { /* ignore */ }
+    // random looks by default so two quick joiners never look identical
+    this.profile = {
+      name: (saved && saved.name) || '',
+      emoji: saved && EMOJI_LIST.includes(saved.emoji)
+        ? saved.emoji
+        : EMOJI_LIST[Math.floor(Math.random() * EMOJI_LIST.length)],
+      color: saved && PLAYER_COLORS.includes(saved.color)
+        ? saved.color
+        : PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)],
+    };
+  },
   lobby: { players: [], tableId: TABLES[0].id },
   inMatch: false,
 
@@ -34,23 +48,25 @@ const UI = {
   // ---- home ----
 
   initHome() {
+    this.loadProfile();
+    document.getElementById('name-input').value = this.profile.name;
+
     const grid = document.getElementById('emoji-grid');
     EMOJI_LIST.forEach(e => {
       const b = document.createElement('button');
       b.textContent = e;
-      b.className = 'emoji-btn';
+      b.className = 'emoji-btn' + (e === this.profile.emoji ? ' sel' : '');
       b.addEventListener('click', () => {
         this.profile.emoji = e;
         grid.querySelectorAll('.emoji-btn').forEach(x => x.classList.toggle('sel', x === b));
       });
       grid.appendChild(b);
     });
-    grid.firstChild.classList.add('sel');
 
     const row = document.getElementById('color-row');
     PLAYER_COLORS.forEach(c => {
       const b = document.createElement('button');
-      b.className = 'color-btn';
+      b.className = 'color-btn' + (c === this.profile.color ? ' sel' : '');
       b.style.background = c;
       b.addEventListener('click', () => {
         this.profile.color = c;
@@ -58,7 +74,6 @@ const UI = {
       });
       row.appendChild(b);
     });
-    row.firstChild.classList.add('sel');
 
     document.getElementById('copy-code').addEventListener('click', () => {
       navigator.clipboard.writeText(Net.myId).then(() => this.toast('Code copied!'));
@@ -67,6 +82,11 @@ const UI = {
 
   readProfile() {
     const name = document.getElementById('name-input').value.trim().slice(0, 12);
+    try {
+      localStorage.setItem('killiards-profile', JSON.stringify({
+        name, emoji: this.profile.emoji, color: this.profile.color,
+      }));
+    } catch (e) { /* ignore */ }
     this.profile.name = name || 'Player ' + Math.floor(10 + Math.random() * 90);
   },
 

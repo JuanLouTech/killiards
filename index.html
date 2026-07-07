@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#04050a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
   <title>KILLIARDS</title>
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
@@ -86,6 +91,26 @@
         <span class="spin-hint">tap to set</span>
       </div>
       <button id="hand-toggle" class="mini" title="Swap controls side">⇄</button>
+      <button id="help-toggle" class="mini" title="How to play">?</button>
+    </div>
+  </div>
+
+  <!-- HELP MODAL -->
+  <div id="help-modal">
+    <div class="spin-modal-box">
+      <h3>How to play</h3>
+      <ul class="help-list">
+        <li>🏆 <b>Last ball alive wins.</b> Take turns shooting your ball like in billiards.</li>
+        <li>🎯 On your turn, <b>drag anywhere on the pad and release</b> — slingshot style: pull back, shoot forward. The arrow shows direction and power.</li>
+        <li>🌀 Tap <b>SPIN</b> to move the hit point. It changes how your ball behaves on its <b>first contact</b>: high = follow through, low = pull back, sides = curve away.</li>
+        <li>💥 Ramming other balls damages <b>them</b>, proportionally to the impact. Your own ball is immune to ball hits during your turn.</li>
+        <li>⚡ Every <b>new contact with a border or obstacle</b> costs a fixed chunk of energy — including yours, so aim carefully!</li>
+        <li>💀 Depleted balls explode and stay as heavy <b>dead balls</b>: they take no damage, but you can shove them into enemies.</li>
+        <li>🎲 Tables have different obstacles; the host picks one (or rolls Random) before the match.</li>
+      </ul>
+      <div class="btn-row">
+        <button id="help-close" class="big-btn">Got it</button>
+      </div>
     </div>
   </div>
 

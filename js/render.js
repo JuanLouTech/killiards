@@ -7,6 +7,7 @@ const Renderer = {
   ctx: null,
   wrap: null,
   scale: 1,
+  MARGIN: 70, // logical units around the table so labels/glow aren't clipped
   borderLayer: null,   // static glowing borders, pre-rendered per resize
   tableId: null,
   particles: [],
@@ -35,13 +36,14 @@ const Renderer = {
     const availH = this.wrap.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
     if (availW < 2 || availH < 2) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const s = Math.min(availW / TABLE_W, availH / TABLE_H);
-    const cssW = TABLE_W * s, cssH = TABLE_H * s;
+    const LW = TABLE_W + this.MARGIN * 2, LH = TABLE_H + this.MARGIN * 2;
+    const s = Math.min(availW / LW, availH / LH);
+    const cssW = LW * s, cssH = LH * s;
     this.canvas.style.width = cssW + 'px';
     this.canvas.style.height = cssH + 'px';
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
-    this.scale = (cssW * dpr) / TABLE_W;
+    this.scale = (cssW * dpr) / LW;
     this.tableId = null; // force border layer rebuild
   },
 
@@ -51,6 +53,7 @@ const Renderer = {
     c.height = this.canvas.height;
     const ctx = c.getContext('2d');
     ctx.scale(this.scale, this.scale);
+    ctx.translate(this.MARGIN, this.MARGIN);
 
     const drawGlowPath = (path, color) => {
       // outer glow pass + bright core pass = laser look
@@ -139,7 +142,8 @@ const Renderer = {
     ctx.setTransform(1, 0, 0, 1, ox, oy);
     ctx.drawImage(this.borderLayer, 0, 0);
 
-    ctx.setTransform(this.scale, 0, 0, this.scale, ox, oy);
+    const m = this.MARGIN * this.scale;
+    ctx.setTransform(this.scale, 0, 0, this.scale, ox + m, oy + m);
 
     // aim arrow (under the balls)
     if (scene.aim && scene.aim.power > 0.02) {

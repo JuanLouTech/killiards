@@ -55,6 +55,7 @@ html, body {
 .panel { position: relative; }
 .mini.leave { position: absolute; top: 22px; right: 22px; color: var(--dim); }
 .mini.leave:active { color: var(--text); }
+#screen-lobby h2 { padding-right: 92px; }
 
 .logo {
   font-size: 44px;
@@ -246,6 +247,8 @@ input[type='text']:focus { border-color: var(--neon); }
 .table-opt.sel span { color: var(--neon); }
 #table-select.locked .table-opt { cursor: default; opacity: 0.75; }
 #table-select.locked .table-opt.sel { opacity: 1; }
+/* guests only see the host's choice, not the whole selectable list */
+#table-select.locked .table-opt:not(.sel) { display: none; }
 .rand-thumb {
   width: 128px;
   height: 72px;
@@ -328,6 +331,28 @@ input[type='text']:focus { border-color: var(--neon); }
   line-height: 1;
 }
 
+#help-toggle {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  z-index: 5;
+  opacity: 0.65;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.help-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: left;
+}
+.help-list b { color: var(--neon); }
+
 /* landscape: board on the left at full height, controls column on the right
    (mirrored by the .lefty class for left-handed players) */
 @media (orientation: landscape) {
@@ -353,6 +378,7 @@ input[type='text']:focus { border-color: var(--neon); }
   .game.lefty #spin-box { right: auto; left: 12px; }
   .game.lefty #turn-banner { left: 100px; right: 14px; text-align: right; }
   .game.lefty #hand-toggle { right: auto; left: 12px; }
+  .game.lefty #help-toggle { left: auto; right: 12px; }
 }
 #controls.my-turn { background: #0a0c16; }
 
@@ -402,7 +428,7 @@ input[type='text']:focus { border-color: var(--neon); }
 #spin-canvas { width: 76px; height: 76px; touch-action: none; cursor: pointer; }
 .spin-hint { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
 
-#spin-modal {
+#spin-modal, #help-modal {
   display: none;
   position: fixed;
   inset: 0;
@@ -413,7 +439,8 @@ input[type='text']:focus { border-color: var(--neon); }
   justify-content: center;
   padding: 20px;
 }
-#spin-modal.show { display: flex; }
+#spin-modal.show, #help-modal.show { display: flex; }
+#help-modal .spin-modal-box { max-height: 86vh; overflow-y: auto; }
 .spin-modal-box {
   background: var(--panel);
   border: 1px solid var(--line);

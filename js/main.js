@@ -51,9 +51,25 @@ window.addEventListener('DOMContentLoaded', () => {
     Game.onTurnResult(d);
   });
 
+  // Fullscreen on touch devices, requested inside user gestures (the only
+  // way browsers allow it). iPhones only honor this as an installed PWA.
+  const goFullscreen = () => {
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    if (document.fullscreenElement) return;
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req) {
+      try {
+        const p = req.call(el, { navigationUI: 'hide' });
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) { /* not supported — fine */ }
+    }
+  };
+
   // ---- home screen buttons ----
   document.getElementById('btn-create').addEventListener('click', () => {
     if (!Net.myId) return UI.toast('Still connecting… try again in a second');
+    goFullscreen();
     UI.hostCreateLobby();
   });
 
@@ -61,6 +77,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const code = document.getElementById('join-input').value.trim().toUpperCase();
     if (code.length < 4) return UI.toast('Enter a room code first');
     if (!Net.myId) return UI.toast('Still connecting… try again in a second');
+    goFullscreen();
     UI.readProfile();
     const btn = document.getElementById('btn-join');
     btn.disabled = true;
@@ -84,8 +101,16 @@ window.addEventListener('DOMContentLoaded', () => {
     const code = document.getElementById('lobby-code').textContent;
     navigator.clipboard.writeText(code).then(() => UI.toast('Code copied!'));
   });
-  document.getElementById('btn-ready').addEventListener('click', () => UI.toggleReady());
-  document.getElementById('btn-start').addEventListener('click', () => UI.hostStartMatch());
+  document.getElementById('btn-ready').addEventListener('click', () => { goFullscreen(); UI.toggleReady(); });
+  document.getElementById('btn-start').addEventListener('click', () => { goFullscreen(); UI.hostStartMatch(); });
+
+  // ---- help modal ----
+  const helpModal = document.getElementById('help-modal');
+  document.getElementById('help-toggle').addEventListener('click', () => helpModal.classList.add('show'));
+  document.getElementById('help-close').addEventListener('click', () => helpModal.classList.remove('show'));
+  helpModal.addEventListener('pointerdown', (e) => {
+    if (e.target === helpModal) helpModal.classList.remove('show');
+  });
   document.getElementById('btn-again').addEventListener('click', () => {
     Net.broadcast({ t: 'lobbyBack' });
     UI.backToLobby();

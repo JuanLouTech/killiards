@@ -1,0 +1,12 @@
+{
+  "name": "Killiards",
+  "short_name": "Killiards",
+  "description": "Turn-based billiard combat — last ball alive wins.",
+  "display": "fullscreen",
+  "background_color": "#04050a",
+  "theme_color": "#04050a",
+  "start_url": ".",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
