@@ -2,10 +2,19 @@
 
 Turn-based online billiard combat. Last ball alive wins.
 
-Pure static web app — **no backend**. Multiplayer uses [PeerJS](https://peerjs.com)
-(WebRTC data channels brokered by the public PeerJS cloud + Google STUN), the same
-approach as the Cyber Soccer prototype: the room creator's peer id is the 5-letter
-room code and everyone connects directly to them.
+Pure static web app — **no backend**. Multiplayer uses two transports:
+
+1. [PeerJS](https://peerjs.com) (WebRTC data channels brokered by the public
+   PeerJS cloud + Google STUN): the room creator's peer id is the 5-letter room
+   code and everyone connects directly to them.
+2. **Automatic relay fallback**: if the WebRTC channel doesn't open within a few
+   seconds (mDNS blocked, no NAT hairpinning, UDP-hostile networks), the join
+   transparently falls back to relaying messages through public MQTT-over-WSS
+   brokers (EMQX / HiveMQ). Works on any network; turn-based play doesn't notice
+   the latency. Both transports can coexist in one lobby.
+
+Connection diagnostics: tap the logo 3× (or add `?debug` to the URL) for a live
+connection log with a copy button.
 
 ## How it works
 
@@ -67,3 +76,6 @@ To play across the internet, deploy the folder to any static host
   WebRTC is replaced by a BroadcastChannel-backed Peer shim because headless
   browsers launched from a shell on macOS can't complete ICE (Local Network
   permission); the real PeerJS path is the same proven setup as Cyber Soccer.
+- `node test/relay.e2e.test.js` — relay-fallback E2E: WebRTC is stubbed to
+  never connect and a 2-player match must join and play through the real
+  public MQTT brokers. Needs internet.

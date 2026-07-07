@@ -90,6 +90,8 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await context.addInitScript(FAKE_PEER);
   // keep the shim: serve an empty script instead of the real peerjs bundle
   await context.route('**/peerjs*', route => route.fulfill({ contentType: 'text/javascript', body: '/* shimmed */' }));
+  // keep the test hermetic: no real relay brokers
+  await context.route('**/mqtt*', route => route.fulfill({ contentType: 'text/javascript', body: '/* shimmed */' }));
   const errors = [];
   const mkPage = async (tag) => {
     const page = await context.newPage();
