@@ -241,7 +241,8 @@ const Net = {
     const admit = () => {
       if (admitted || rejected) return;
       const amGuestElsewhere = this.server && this.server.open;
-      if (this.matchLocked || amGuestElsewhere || this.conns.length >= MAX_PLAYERS - 1) {
+      const seatsFull = this.seatsFull ? this.seatsFull() : false; // bots take seats too
+      if (this.matchLocked || amGuestElsewhere || seatsFull || this.conns.length >= MAX_PLAYERS - 1) {
         rejected = true;
         this.log(`rejected ${conn.peer} (busy/full)`);
         conn.send({ t: 'busy' });

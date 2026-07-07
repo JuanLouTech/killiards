@@ -55,6 +55,7 @@
         <button id="lobby-copy" class="mini" title="Copy room code">⧉</button>
       </h2>
       <div id="lobby-players"></div>
+      <button id="btn-add-bot" class="mini add-bot">+ 🤖 Add bot</button>
       <label class="lab">Table</label>
       <div id="table-select"></div>
       <div class="btn-row">
@@ -78,6 +79,10 @@
   <div id="screen-game" class="screen game">
     <div id="table-wrap">
       <canvas id="table-canvas"></canvas>
+      <div id="bestplay-bar">
+        <span id="bestplay-title"></span>
+        <button id="bestplay-skip" class="mini">Skip ⏭</button>
+      </div>
     </div>
     <div id="controls">
       <div id="turn-banner"></div>
@@ -90,6 +95,7 @@
         <div id="spin-wrap"><canvas id="spin-canvas"></canvas></div>
         <span class="spin-hint">tap to set</span>
       </div>
+      <div id="emote-bar"></div>
       <button id="hand-toggle" class="mini" title="Swap controls side">⇄</button>
       <button id="help-toggle" class="mini" title="How to play">?</button>
     </div>
@@ -106,6 +112,10 @@
         <li>💥 Ramming other balls damages <b>them</b>, proportionally to the impact. Your own ball is immune to ball hits during your turn.</li>
         <li>⚡ Every <b>new contact with a border or obstacle</b> costs a fixed chunk of energy — including yours, so aim carefully!</li>
         <li>💀 Depleted balls explode and stay as heavy <b>dead balls</b>: they take no damage, but you can shove them into enemies.</li>
+        <li>🎁 <b>Power-ups</b> appear on the table for a few turns. Touch one to store it — it fires automatically on your <b>next shot</b>. 💥⚡💚 are boosts… ☠️🐜🪨 are <b>traps</b>: dodge them, or shove enemy balls into them!</li>
+        <li>🌀 Some tables have <b>teleporters</b> (matching rings) and <b>pushable barriers</b> (blue squares) you can launch at people.</li>
+        <li>🤖 The host can add up to 3 <b>bots</b> (yellow ring) in the lobby.</li>
+        <li>😂 Tap the <b>emotes</b> under the pad to react at any time.</li>
         <li>🎲 Tables have different obstacles; the host picks one (or rolls Random) before the match.</li>
       </ul>
       <div class="btn-row">

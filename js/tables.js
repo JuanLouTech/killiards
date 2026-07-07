@@ -127,6 +127,43 @@ const TABLES = [
       [1420, 450], [1420, 700], [600, 650], [960, 220],
     ],
   },
+  // teles: teleporter pairs — a ball entering one end pops out of the other,
+  // keeping its velocity. barriers: pushable glowing squares that behave like
+  // heavy neutral balls and can be launched at players.
+  {
+    id: 'wormholes',
+    name: 'Wormholes',
+    obstacles: [],
+    teles: [
+      { a: [230, 190], b: [1370, 710] },
+      { a: [230, 710], b: [1370, 190] },
+    ],
+    spawns: [
+      [800, 450], [800, 170], [800, 730], [450, 450],
+      [1150, 450], [450, 180], [1150, 720], [560, 700],
+    ],
+  },
+  {
+    id: 'bastion',
+    name: 'Bastion',
+    obstacles: [rectPoly(760, 360, 840, 540)],
+    barriers: [[520, 290], [520, 610], [1080, 290], [1080, 610]],
+    spawns: [
+      [200, 180], [1400, 180], [200, 720], [1400, 720],
+      [800, 150], [800, 750], [280, 450], [1320, 450],
+    ],
+  },
+  {
+    id: 'flux',
+    name: 'Flux',
+    obstacles: [diamondPoly(800, 450, 110)],
+    teles: [{ a: [180, 450], b: [1420, 450] }],
+    barriers: [[800, 220], [800, 680]],
+    spawns: [
+      [300, 200], [1300, 200], [300, 700], [1300, 700],
+      [550, 450], [1050, 450], [800, 120], [800, 780],
+    ],
+  },
 ];
 
 function getTable(id) {

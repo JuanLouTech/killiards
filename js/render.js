@@ -11,8 +11,10 @@ const Renderer = {
   borderLayer: null,   // static glowing borders, pre-rendered per resize
   tableId: null,
   particles: [],
+  floaters: [],        // rising emote emojis
   shakeMag: 0,
   lastT: 0,
+  TELE_COLORS: ['#3ec6ff', '#ff6bd6', '#ffb14d'],
 
   init(canvas, wrap) {
     this.canvas = canvas;
@@ -112,6 +114,10 @@ const Renderer = {
     this.addShake(14);
   },
 
+  spawnEmote(x, y, emoji) {
+    this.floaters.push({ x, y, emoji, life: 0, ttl: 1.7 });
+  },
+
   // scene: { table, balls, barsAlpha, aim, myIdx }
   // balls: [{x, y, color, emoji, dead, name, hpShow}]
   draw(scene) {
@@ -145,12 +151,19 @@ const Renderer = {
     const m = this.MARGIN * this.scale;
     ctx.setTransform(this.scale, 0, 0, this.scale, ox + m, oy + m);
 
+    // static-ish table features under everything that moves
+    if (scene.table.teles) this.drawTeleporters(ctx, scene.table.teles, now);
+    if (scene.powerups && scene.powerups.length) this.drawPowerups(ctx, scene.powerups, now);
+
     // aim arrow (under the balls)
     if (scene.aim && scene.aim.power > 0.02) {
       this.drawArrow(ctx, scene.aim);
     }
 
-    // balls
+    // barriers & balls
+    if (scene.barriers) {
+      for (const br of scene.barriers) this.drawBarrier(ctx, br);
+    }
     for (const b of scene.balls) {
       this.drawBall(ctx, b);
     }
@@ -180,6 +193,98 @@ const Renderer = {
       return true;
     });
     ctx.globalAlpha = 1;
+
+    // floating emotes (drawn above everything)
+    this.floaters = this.floaters.filter(f => {
+      f.life += dt;
+      if (f.life >= f.ttl) return false;
+      const k = f.life / f.ttl;
+      f.y -= 55 * dt;
+      const pop = Math.min(1, f.life / 0.18);          // quick scale-in
+      const a = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;      // fade at the end
+      ctx.globalAlpha = a;
+      ctx.font = `${Math.round(52 * (0.5 + pop * 0.5))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(f.emoji, f.x, f.y);
+      return true;
+    });
+    ctx.globalAlpha = 1;
+  },
+
+  drawTeleporters(ctx, teles, now) {
+    teles.forEach((t, ti) => {
+      const color = this.TELE_COLORS[ti % this.TELE_COLORS.length];
+      for (const [x, y] of [t.a, t.b]) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(now * 1.4 + ti);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 4;
+        ctx.setLineDash([16, 12]);
+        ctx.beginPath();
+        ctx.arc(0, 0, PHYS.TELE_R, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.rotate(-now * 2.6);
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, PHYS.TELE_R * 0.55, 0.6, Math.PI * 2 - 0.6);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  },
+
+  drawPowerups(ctx, powerups, now) {
+    for (const u of powerups) {
+      const kind = POWER_KINDS[u.k];
+      const color = kind.trap ? '#c86bff' : '#ffd84d';
+      const pulse = 1 + Math.sin(now * 4 + u.x) * 0.08;
+      const R = PHYS.PU_R * pulse;
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 20;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, R, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.14;
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      ctx.font = `${Math.round(R * 1.1)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(kind.emoji, u.x, u.y + 1);
+      ctx.restore();
+    }
+  },
+
+  drawBarrier(ctx, br) {
+    const s = PHYS.BAR_R * 1.72; // square drawn slightly inside its circle body
+    ctx.save();
+    ctx.shadowColor = '#3ec6ff';
+    ctx.shadowBlur = 16;
+    ctx.strokeStyle = '#3ec6ff';
+    ctx.lineWidth = 5;
+    ctx.lineJoin = 'round';
+    const p = new Path2D();
+    if (p.roundRect) p.roundRect(br.x - s / 2, br.y - s / 2, s, s, 9);
+    else p.rect(br.x - s / 2, br.y - s / 2, s, s);
+    ctx.stroke(p);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(62, 198, 255, 0.12)';
+    ctx.fill(p);
+    ctx.strokeStyle = 'rgba(234, 250, 255, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke(p);
+    ctx.restore();
   },
 
   drawArrow(ctx, aim) {
@@ -209,7 +314,7 @@ const Renderer = {
   },
 
   drawBall(ctx, b) {
-    const R = PHYS.R;
+    const R = PHYS.R * (b.rMul || 1);
     ctx.save();
     if (b.dead) {
       // dead ball: thick grey circumference, no name/bar
@@ -226,20 +331,34 @@ const Renderer = {
       ctx.textBaseline = 'middle';
       ctx.fillText(b.emoji, b.x, b.y + 2);
     } else {
-      ctx.shadowColor = b.color;
+      ctx.shadowColor = b.isBot ? '#ffd84d' : b.color;
       ctx.shadowBlur = 14;
       ctx.fillStyle = b.color;
       ctx.beginPath();
       ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-      ctx.lineWidth = 2.5;
+      // bots wear a yellow glowing ring instead of the white one
+      ctx.strokeStyle = b.isBot ? '#ffd84d' : 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = b.isBot ? 3.5 : 2.5;
       ctx.stroke();
       ctx.font = `${R * 1.25}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(b.emoji, b.x, b.y + 2);
+      // stored power-up badge
+      if (b.storedPower && POWER_KINDS[b.storedPower]) {
+        const bx = b.x + R * 0.85, by = b.y - R * 0.85;
+        ctx.fillStyle = 'rgba(4,5,10,0.85)';
+        ctx.beginPath();
+        ctx.arc(bx, by, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = POWER_KINDS[b.storedPower].trap ? '#c86bff' : '#ffd84d';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.font = '17px sans-serif';
+        ctx.fillText(POWER_KINDS[b.storedPower].emoji, bx, by + 1);
+      }
     }
     ctx.restore();
   },
@@ -254,14 +373,16 @@ const Renderer = {
       else ctx.rect(rx, ry, rw, rh);
     };
     ctx.save();
-    // name
-    ctx.font = 'bold 19px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillText(b.name, b.x + 1.5, y - 3 + 1.5);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(b.name, b.x, y - 3);
+    // name (nameless balls show only the bar — the emoji is on the ball)
+    if (b.name) {
+      ctx.font = 'bold 19px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(b.name, b.x + 1.5, y - 3 + 1.5);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(b.name, b.x, y - 3);
+    }
     // bar
     const pct = Math.max(0, Math.min(1, b.hpShow / PHYS.MAX_HP));
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
@@ -297,6 +418,21 @@ const Renderer = {
       ctx.fillStyle = 'rgba(65,255,90,0.15)';
       ctx.fill();
       ctx.stroke();
+    }
+    (table.teles || []).forEach((t, ti) => {
+      ctx.strokeStyle = this.TELE_COLORS[ti % this.TELE_COLORS.length];
+      ctx.lineWidth = 4 / s;
+      for (const [x, y] of [t.a, t.b]) {
+        ctx.beginPath();
+        ctx.arc(x, y, PHYS.TELE_R, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+    for (const [x, y] of (table.barriers || [])) {
+      const bs = PHYS.BAR_R * 1.72;
+      ctx.strokeStyle = '#3ec6ff';
+      ctx.lineWidth = 4 / s;
+      ctx.strokeRect(x - bs / 2, y - bs / 2, bs, bs);
     }
   },
 };

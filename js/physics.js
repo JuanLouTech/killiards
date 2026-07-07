@@ -1,5 +1,9 @@
 // Turn simulation. Runs only on the active player's device; every fixed step
 // is recorded so other devices can replay the exact same motion.
+//
+// Besides player balls the sim can carry extra "bodies": pushable barriers
+// (blue squares that behave like heavy balls) recorded in the same frames.
+// Static table features handled here: teleporter pairs and power-up pickups.
 
 const PHYS = {
   DT: 1 / 60,          // fixed physics step
@@ -16,7 +20,45 @@ const PHYS = {
   BALL_DMG_K: 0.022,   // damage per unit of speed change in ball contacts
   MAX_T: 20,           // safety cap on turn length (seconds)
   MAX_HP: 110,         // starting health
+
+  // barriers (pushable squares, circle physics)
+  BAR_R: 34,
+  BAR_M: 1.9,          // heavier than balls: launched barriers hit hard
+  BAR_DRAG: 1.0,
+
+  // teleporters
+  TELE_R: 46,          // trigger radius around each portal center
+
+  // power-ups
+  PU_R: 26,            // pickup trigger radius
+  PU_LIFE: 4,          // turns a power-up stays on the table
+  PU_CHANCE: 0.38,     // spawn roll at the end of each turn
+  PU_MAX: 3,           // max simultaneous power-ups
+
+  // effects
+  BLAST_R: 230,
+  BLAST_DMG: 26,
+  BLAST_KICK: 520,
+  BOOST_MULT: 1.45,
+  HEAL_HP: 25,
+  POISON_HP: 18,
+  HEAVY_SPEED: 0.55,
+  HEAVY_M: 2.2,
+  TINY_R: 0.62,
+  TINY_M: 0.55,
 };
+
+// Power-up catalogue. Traps are picked up exactly like buffs — shoving an
+// enemy ball into one is the whole point.
+const POWER_KINDS = {
+  blast:  { emoji: '💥', name: 'Blast shot',  trap: false, desc: 'your next shot explodes on first contact' },
+  boost:  { emoji: '⚡', name: 'Power boost', trap: false, desc: 'your next shot is much stronger' },
+  heal:   { emoji: '💚', name: 'Repair',      trap: false, desc: `+${PHYS.HEAL_HP} energy on your next turn` },
+  poison: { emoji: '☠️', name: 'Poison',      trap: true,  desc: `-${PHYS.POISON_HP} energy on your next turn` },
+  tiny:   { emoji: '🐜', name: 'Tiny ball',   trap: true,  desc: 'your ball is small and light next turn' },
+  heavy:  { emoji: '🪨', name: 'Heavy ball',  trap: true,  desc: 'your next shot is slow and sluggish' },
+};
+const POWER_KIND_IDS = Object.keys(POWER_KINDS);
 
 // Closest point on segment ab to point p.
 function closestOnSegment(px, py, ax, ay, bx, by) {
@@ -45,9 +87,16 @@ function pointInConvexPoly(px, py, pts) {
 class Sim {
   // balls: the live match ball objects (mutated in place so the local device
   // can render the simulation directly). shot: {dx, dy, speed, spin:{x,y}}
-  constructor(balls, table, shooterIdx, shot) {
+  // opts: { barriers, powerups, effect, onEvent } — barriers/powerups are the
+  // live match arrays, mutated in place like the balls.
+  constructor(balls, table, shooterIdx, shot, opts = {}) {
     this.balls = balls;
+    this.barriers = opts.barriers || [];
+    this.barriers.forEach(b => { b.isBar = true; b.vx = b.vx || 0; b.vy = b.vy || 0; });
+    this.bodies = balls.concat(this.barriers);
+    this.pu = opts.powerups || null;
     this.table = table;
+    this.teles = table.teles || [];
     this.shooterIdx = shooterIdx;
     this.spin = shot.spin && (shot.spin.x || shot.spin.y) ? { ...shot.spin } : null;
     this.spinApplied = false;
@@ -56,22 +105,54 @@ class Sim {
     this.steps = 0;
     this.acc = 0;
     this.done = false;
-    this.onEvent = null;
+    this.onEvent = opts.onEvent || null;
 
-    for (const b of balls) {
+    for (const b of this.bodies) {
       b.vx = 0;
       b.vy = 0;
       b.lastBorder = null; // per-turn "new contact" tracking
+      // teleporter re-entry lock: a body resting on a portal must leave it
+      // before it can teleport again
+      b.teleLock = null;
+      this.teles.forEach((t, ti) => {
+        if (Math.hypot(b.x - t.a[0], b.y - t.a[1]) < PHYS.TELE_R ||
+            Math.hypot(b.x - t.b[0], b.y - t.b[1]) < PHYS.TELE_R) b.teleLock = ti;
+      });
     }
+    for (const b of balls) { b.rMul = null; b.mMul = null; }
+
+    // stored power-up consumed by this shot (buff or trap, applied the same way)
+    this.effect = opts.effect || null;
+    this.blastArmed = false;
     const s = balls[shooterIdx];
-    s.vx = shot.dx * shot.speed;
-    s.vy = shot.dy * shot.speed;
+    let speedMul = 1;
+    if (this.effect === 'blast') this.blastArmed = true;
+    else if (this.effect === 'boost') speedMul = PHYS.BOOST_MULT;
+    else if (this.effect === 'heavy') { speedMul = PHYS.HEAVY_SPEED; s.mMul = PHYS.HEAVY_M; }
+    else if (this.effect === 'tiny') { s.rMul = PHYS.TINY_R; s.mMul = PHYS.TINY_M; }
+    else if (this.effect === 'heal') s.hp = Math.min(PHYS.MAX_HP, s.hp + PHYS.HEAL_HP);
+    else if (this.effect === 'poison') s.hp = Math.max(1, s.hp - PHYS.POISON_HP);
+    if (this.effect) {
+      this.emit({ f: 0, type: 'fx', kind: this.effect, i: shooterIdx,
+        x: Math.round(s.x), y: Math.round(s.y), mag: 0, victims: [] });
+    }
+
+    s.vx = shot.dx * shot.speed * speedMul;
+    s.vy = shot.dy * shot.speed * speedMul;
     this.recordFrame();
+  }
+
+  bodyR(b) {
+    return b.isBar ? PHYS.BAR_R : PHYS.R * (b.rMul || 1);
+  }
+
+  bodyM(b) {
+    return b.isBar ? PHYS.BAR_M : (b.mMul || 1);
   }
 
   recordFrame() {
     const f = [];
-    for (const b of this.balls) f.push(Math.round(b.x), Math.round(b.y));
+    for (const b of this.bodies) f.push(Math.round(b.x), Math.round(b.y));
     this.frames.push(f);
   }
 
@@ -85,6 +166,7 @@ class Sim {
   }
 
   damage(idx, amount, kind, ev) {
+    if (idx >= this.balls.length) return; // barriers have no hp
     const b = this.balls[idx];
     if (b.dead) return;
     if (kind === 'ball' && idx === this.shooterIdx) return; // shooter immune to ball hits
@@ -107,8 +189,29 @@ class Sim {
     b.vy += ty * this.spin.x * speed * 0.45 + fy * (-this.spin.y) * speed * 0.4;
   }
 
+  // Blast power-up: the shooter's first contact of any kind detonates.
+  maybeBlast(cx, cy) {
+    if (!this.blastArmed) return;
+    this.blastArmed = false;
+    const ev = { f: this.recFrame(), type: 'boom', x: Math.round(cx), y: Math.round(cy), mag: 900, victims: [] };
+    this.bodies.forEach((b, i) => {
+      const d = Math.hypot(b.x - cx, b.y - cy);
+      if (d > PHYS.BLAST_R) return;
+      const k = 1 - d / PHYS.BLAST_R;
+      if (d > 0.5) {
+        const kick = PHYS.BLAST_KICK * k / this.bodyM(b);
+        b.vx += (b.x - cx) / d * kick;
+        b.vy += (b.y - cy) / d * kick;
+      }
+      if (i < this.balls.length && i !== this.shooterIdx) {
+        this.damage(i, PHYS.BLAST_DMG * k, 'boom', ev);
+      }
+    });
+    this.emit(ev);
+  }
+
   borderContact(idx, borderId, x, y, mag) {
-    const b = this.balls[idx];
+    const b = this.bodies[idx];
     if (b.lastBorder === borderId) return; // same border: no new damage
     b.lastBorder = borderId;
     const ev = { f: this.recFrame(), type: 'wall', x: Math.round(x), y: Math.round(y), mag: Math.round(mag), victims: [] };
@@ -117,8 +220,8 @@ class Sim {
   }
 
   collideWalls(idx) {
-    const b = this.balls[idx];
-    const R = PHYS.R, E = PHYS.WALL_E;
+    const b = this.bodies[idx];
+    const R = this.bodyR(b), E = PHYS.WALL_E;
     let hit = null;
     if (b.x < R) { b.x = R; if (b.vx < 0) { hit = ['W_L', Math.abs(b.vx), 1, 0]; b.vx = -b.vx * E; } }
     else if (b.x > TABLE_W - R) { b.x = TABLE_W - R; if (b.vx > 0) { hit = ['W_R', Math.abs(b.vx), -1, 0]; b.vx = -b.vx * E; } }
@@ -126,14 +229,14 @@ class Sim {
     else if (b.y > TABLE_H - R) { b.y = TABLE_H - R; if (b.vy > 0) { hit = ['W_B', Math.abs(b.vy), 0, -1]; b.vy = -b.vy * E; } }
     if (hit) {
       const [id, mag, nx, ny] = hit;
-      if (idx === this.shooterIdx) this.applySpin(nx, ny);
+      if (idx === this.shooterIdx) { this.applySpin(nx, ny); this.maybeBlast(b.x, b.y); }
       if (mag > 12) this.borderContact(idx, id, b.x, b.y, mag);
     }
   }
 
   collideObstacles(idx) {
-    const b = this.balls[idx];
-    const R = PHYS.R;
+    const b = this.bodies[idx];
+    const R = this.bodyR(b);
     this.table.obstacles.forEach((obs, oi) => {
       const pts = obs.pts;
       let best = null;
@@ -168,7 +271,7 @@ class Sim {
       if (vn < 0) {
         b.vx -= (1 + PHYS.WALL_E) * vn * nx;
         b.vy -= (1 + PHYS.WALL_E) * vn * ny;
-        if (idx === this.shooterIdx) this.applySpin(nx, ny);
+        if (idx === this.shooterIdx) { this.applySpin(nx, ny); this.maybeBlast(best.cx, best.cy); }
         if (Math.abs(vn) > 12) {
           this.borderContact(idx, `o${oi}e${best.e}`, best.cx, best.cy, Math.abs(vn));
         }
@@ -176,28 +279,29 @@ class Sim {
     });
   }
 
-  collideBalls() {
-    const R2 = PHYS.R * 2;
-    for (let i = 0; i < this.balls.length; i++) {
-      for (let j = i + 1; j < this.balls.length; j++) {
-        const a = this.balls[i], b = this.balls[j];
+  collideBodies() {
+    for (let i = 0; i < this.bodies.length; i++) {
+      for (let j = i + 1; j < this.bodies.length; j++) {
+        const a = this.bodies[i], b = this.bodies[j];
+        const RR = this.bodyR(a) + this.bodyR(b);
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.hypot(dx, dy);
-        if (d >= R2 || d === 0) continue;
+        if (d >= RR || d === 0) continue;
         const nx = dx / d, ny = dy / d;
         // separate overlap equally
-        const push = (R2 - d) / 2;
+        const push = (RR - d) / 2;
         a.x -= nx * push; a.y -= ny * push;
         b.x += nx * push; b.y += ny * push;
         const rvn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
         if (rvn >= 0) continue;
-        // equal-mass impulse along the normal
-        const jn = -(1 + PHYS.BALL_E) * rvn / 2;
-        a.vx -= jn * nx; a.vy -= jn * ny;
-        b.vx += jn * nx; b.vy += jn * ny;
+        // impulse along the normal, mass-aware (barriers and heavy/tiny balls)
+        const ma = this.bodyM(a), mb = this.bodyM(b);
+        const jn = -(1 + PHYS.BALL_E) * rvn / (1 / ma + 1 / mb);
+        a.vx -= jn / ma * nx; a.vy -= jn / ma * ny;
+        b.vx += jn / mb * nx; b.vy += jn / mb * ny;
 
-        if (i === this.shooterIdx) this.applySpin(-nx, -ny);
-        else if (j === this.shooterIdx) this.applySpin(nx, ny);
+        if (i === this.shooterIdx) { this.applySpin(-nx, -ny); this.maybeBlast((a.x + b.x) / 2, (a.y + b.y) / 2); }
+        else if (j === this.shooterIdx) { this.applySpin(nx, ny); this.maybeBlast((a.x + b.x) / 2, (a.y + b.y) / 2); }
 
         if (jn > 15) {
           const ev = {
@@ -206,9 +310,50 @@ class Sim {
             mag: Math.round(jn), victims: [],
           };
           // damage proportional to the speed change caused by the contact
-          this.damage(i, jn * PHYS.BALL_DMG_K, 'ball', ev);
-          this.damage(j, jn * PHYS.BALL_DMG_K, 'ball', ev);
+          this.damage(i, jn / ma * PHYS.BALL_DMG_K, 'ball', ev);
+          this.damage(j, jn / mb * PHYS.BALL_DMG_K, 'ball', ev);
           this.emit(ev);
+        }
+      }
+    }
+  }
+
+  checkTeleports() {
+    if (!this.teles.length) return;
+    for (const b of this.bodies) {
+      this.teles.forEach((t, ti) => {
+        const da = Math.hypot(b.x - t.a[0], b.y - t.a[1]);
+        const db = Math.hypot(b.x - t.b[0], b.y - t.b[1]);
+        if (b.teleLock === ti) {
+          if (da > PHYS.TELE_R + 20 && db > PHYS.TELE_R + 20) b.teleLock = null;
+          return;
+        }
+        if (b.teleLock !== null) return;
+        let from = null, to = null;
+        if (da < PHYS.TELE_R) { from = t.a; to = t.b; }
+        else if (db < PHYS.TELE_R) { from = t.b; to = t.a; }
+        if (!from) return;
+        b.x = to[0] + (b.x - from[0]);
+        b.y = to[1] + (b.y - from[1]);
+        b.teleLock = ti;
+        this.emit({ f: this.recFrame(), type: 'tp', x: from[0], y: from[1],
+          x2: to[0], y2: to[1], mag: 300, victims: [] });
+      });
+    }
+  }
+
+  checkPickups() {
+    if (!this.pu || !this.pu.length) return;
+    for (let i = 0; i < this.balls.length; i++) {
+      const b = this.balls[i];
+      if (b.dead) continue;
+      for (let p = this.pu.length - 1; p >= 0; p--) {
+        const u = this.pu[p];
+        if (Math.hypot(b.x - u.x, b.y - u.y) < PHYS.PU_R + this.bodyR(b)) {
+          this.pu.splice(p, 1);
+          b.storedPower = u.k; // whoever's ball touches it keeps it — traps included
+          this.emit({ f: this.recFrame(), type: 'pu', x: u.x, y: u.y,
+            id: u.id, k: u.k, i, mag: 0, victims: [] });
         }
       }
     }
@@ -216,19 +361,21 @@ class Sim {
 
   step() {
     const dt = PHYS.DT;
-    for (const b of this.balls) {
+    for (const b of this.bodies) {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
     }
-    for (let i = 0; i < this.balls.length; i++) {
+    for (let i = 0; i < this.bodies.length; i++) {
       this.collideWalls(i);
       this.collideObstacles(i);
     }
-    this.collideBalls();
+    this.collideBodies();
+    this.checkTeleports();
+    this.checkPickups();
 
     let anyMoving = false;
-    for (const b of this.balls) {
-      const drag = b.dead ? PHYS.DEAD_DRAG : PHYS.DRAG;
+    for (const b of this.bodies) {
+      const drag = b.isBar ? PHYS.BAR_DRAG : (b.dead ? PHYS.DEAD_DRAG : PHYS.DRAG);
       const mult = Math.exp(-drag * dt);
       b.vx *= mult; b.vy *= mult;
       if (Math.hypot(b.vx, b.vy) < PHYS.STOP) { b.vx = 0; b.vy = 0; }

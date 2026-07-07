@@ -8,6 +8,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // unlock audio on first interaction (mobile requirement)
   window.addEventListener('pointerdown', () => SFX.unlock(), { once: true });
 
+  // a room is full when all 6 seats are taken, bots included
+  Net.seatsFull = () => UI.lobby.players.length >= 6;
+
   // ---- peer bootstrap ----
   Net.start(
     (id) => { document.getElementById('my-code').textContent = id; },
@@ -50,6 +53,37 @@ window.addEventListener('DOMContentLoaded', () => {
     if (Net.isHost) Net.broadcast({ t: 'turn', d }, from);
     Game.onTurnResult(d);
   });
+
+  // ---- emotes: everyone can react at any time during a match ----
+  Net.on('emote', (d, from) => {
+    if (Net.isHost) Net.broadcast({ t: 'emote', d }, from);
+    Game.showEmote(d);
+  });
+
+  const EMOTES = ['😂', '😮', '🔥', '👏', '😱', '🤏'];
+  const emoteBar = document.getElementById('emote-bar');
+  let lastEmote = 0;
+  EMOTES.forEach(e => {
+    const b = document.createElement('button');
+    b.className = 'emote-btn';
+    b.textContent = e;
+    b.addEventListener('click', () => {
+      if (!Game.match || Game.match.mode === 'over') return;
+      const now = Date.now();
+      if (now - lastEmote < 700) return; // rate limit
+      lastEmote = now;
+      const d = { id: Net.myId, e };
+      Net.send({ t: 'emote', d });
+      Game.showEmote(d);
+    });
+    emoteBar.appendChild(b);
+  });
+
+  // ---- bots (host adds them in the lobby) ----
+  document.getElementById('btn-add-bot').addEventListener('click', () => UI.hostAddBot());
+
+  // ---- best play replay is skippable ----
+  document.getElementById('bestplay-skip').addEventListener('click', () => Game.skipBestPlay());
 
   // Fullscreen on touch devices, requested inside user gestures (the only
   // way browsers allow it). iPhones only honor this as an installed PWA.

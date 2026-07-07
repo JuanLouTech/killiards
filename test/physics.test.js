@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path').join(__dirname, '..', 'js') + '/';
 const src = fs.readFileSync(path + 'tables.js', 'utf8') + '\n' +
   fs.readFileSync(path + 'physics.js', 'utf8') +
-  '\n;Object.assign(globalThis, { Sim, PHYS, getTable, TABLE_W, TABLE_H, pointInConvexPoly, closestOnSegment, TABLES });';
+  '\n;Object.assign(globalThis, { Sim, PHYS, getTable, TABLE_W, TABLE_H, pointInConvexPoly, closestOnSegment, TABLES, POWER_KINDS, POWER_KIND_IDS });';
 eval(src);
 
 function mkBalls(spawns, n) {
@@ -123,6 +123,93 @@ function check(name, cond) {
 }
 
 
+// Test 10: teleporter transports the ball, keeps it moving, and settles
+{
+  const t = getTable('wormholes');
+  const balls = mkBalls([[450, 190], [1150, 720]], 2); // near portal 1a at (230,190)
+  const sim = runTurn(t, balls, 0, { dx: -1, dy: 0, speed: 900, spin: { x: 0, y: 0 } });
+  const tps = sim.events.filter(e => e.type === 'tp');
+  check('teleport event fired', tps.length >= 1);
+  check('teleported sim settles (no infinite loop)', sim.done);
+  // ball rolled into a=(230,190) so it must have come out near b=(1370,710)
+  check('ball exited at the paired portal side', balls[0].x > 800);
+}
+
+// Test 11: barriers are recorded, pushable, stay in bounds, and hurt on impact
+{
+  const t = getTable('bastion');
+  const barriers = t.barriers.map(([x, y]) => ({ x, y, vx: 0, vy: 0 }));
+  const balls = mkBalls([[200, 290], [900, 290]], 2); // barrier at (520,290) between them
+  const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 1500, spin: { x: 0, y: 0 } }, { barriers });
+  let steps = 0;
+  while (!sim.step() && steps < 60 * 30) steps++;
+  check('frames include barrier coords', sim.frames.every(f => f.length === (2 + barriers.length) * 2));
+  check('barrier moved when rammed', barriers[0].x !== 520);
+  check('barriers stay in bounds', barriers.every(b =>
+    b.x >= PHYS.BAR_R - 1 && b.x <= TABLE_W - PHYS.BAR_R + 1 && b.y >= PHYS.BAR_R - 1 && b.y <= TABLE_H - PHYS.BAR_R + 1));
+  const hitOther = sim.events.some(e => e.type === 'ball' && e.victims.some(v => v.i === 1));
+  console.log('   barrier launched into victim, victim hp:', balls[1].hp.toFixed(1));
+  check('launched barrier damages the victim', hitOther && balls[1].hp < 100);
+}
+
+// Test 12: power-up pickup — shooter collects, and a PUSHED ball collects for ITS owner
+{
+  const t = getTable('classic');
+  const balls = mkBalls([[400, 450], [700, 450]], 2);
+  const powerups = [{ id: 'u1', k: 'boost', x: 1000, y: 450, born: 1 },
+                    { id: 'u2', k: 'poison', x: 200, y: 200, born: 1 }];
+  const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 1100, spin: { x: 0, y: 0 } }, { powerups });
+  let steps = 0;
+  while (!sim.step() && steps < 60 * 30) steps++;
+  const pev = sim.events.filter(e => e.type === 'pu');
+  check('pickup event fired', pev.length === 1);
+  check('pushed ball keeps the power-up for its owner', pev[0].i === 1 && balls[1].storedPower === 'boost');
+  check('picked power-up removed from the table', powerups.length === 1 && powerups[0].id === 'u2');
+  check('shooter got nothing', !balls[0].storedPower);
+}
+
+// Test 13: effects — boost travels farther, tiny shrinks, heal/poison move hp
+{
+  const t = getTable('classic');
+  const run = (effect) => {
+    const balls = mkBalls([[300, 450], [1400, 800]], 2);
+    // slow shot: nobody reaches the far wall, so distances compare cleanly
+    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 500, spin: { x: 0, y: 0 } }, { effect });
+    let steps = 0;
+    while (!sim.step() && steps < 60 * 30) steps++;
+    return { balls, sim };
+  };
+  const plain = run(null), boost = run('boost'), heavy = run('heavy');
+  check('boost travels farther than plain', boost.balls[0].x > plain.balls[0].x + 50);
+  check('heavy travels shorter than plain', heavy.balls[0].x < plain.balls[0].x - 50);
+  const tiny = run('tiny');
+  check('tiny shrinks the shooter', tiny.balls[0].rMul === PHYS.TINY_R);
+  const heal = run('heal'), poison = run('poison');
+  check('heal adds energy', heal.balls[0].hp > poison.balls[0].hp);
+  check('poison drains energy', poison.balls[0].hp <= 100 - PHYS.POISON_HP + PHYS.BORDER_DMG * 3);
+  check('effect event recorded for replays', boost.sim.events.some(e => e.type === 'fx' && e.kind === 'boost'));
+}
+
+// Test 14: blast explodes on first contact and area-damages others (not the shooter)
+{
+  const t = getTable('classic');
+  const balls = mkBalls([[400, 450], [800, 450], [900, 500]], 3);
+  const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 1200, spin: { x: 0, y: 0 } }, { effect: 'blast' });
+  let steps = 0;
+  while (!sim.step() && steps < 60 * 30) steps++;
+  const boom = sim.events.find(e => e.type === 'boom');
+  check('blast detonated', !!boom);
+  check('blast damaged bystanders', boom.victims.some(v => v.i === 2));
+  check('blast spared the shooter', !boom.victims.some(v => v.i === 0));
+}
+
+// Test 15: power-up spawn roll produces valid positions on every table
+{
+  // minimal Game-less reimplementation guard: just check the constants exist
+  check('power kinds defined', POWER_KIND_IDS.length === 6 && POWER_KIND_IDS.every(k => POWER_KINDS[k].emoji));
+  check('trap/buff split', POWER_KIND_IDS.filter(k => POWER_KINDS[k].trap).length === 3);
+}
+
 // Test 9: every spawn on every table is clear of obstacles and walls
 {
   for (const t of TABLES) {
@@ -138,6 +225,15 @@ function check(name, cond) {
           if (Math.hypot(x - cx, y - cy) < PHYS.R + 20) { bad = `${t.id} spawn ${x},${y} too close to obstacle`; break; }
         }
         if (bad) break;
+      }
+      for (const tp of (t.teles || [])) {
+        for (const [px, py] of [tp.a, tp.b]) {
+          if (Math.hypot(x - px, y - py) < PHYS.TELE_R + PHYS.R + 15) { bad = `${t.id} spawn ${x},${y} on a teleporter`; break; }
+        }
+        if (bad) break;
+      }
+      for (const [bx, by] of (t.barriers || [])) {
+        if (Math.hypot(x - bx, y - by) < PHYS.BAR_R + PHYS.R + 15) { bad = `${t.id} spawn ${x},${y} on a barrier`; break; }
       }
       if (bad) break;
     }

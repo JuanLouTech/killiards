@@ -71,6 +71,21 @@ const SFX = (() => {
     tick() {
       tone({ type: 'square', freq: 900, dur: 0.04, vol: 0.06 });
     },
+    powerup() {
+      [520, 700, 1040].forEach((f, i) =>
+        tone({ type: 'triangle', freq: f, dur: 0.12, vol: 0.12, delay: i * 0.07 }));
+    },
+    trap() {
+      tone({ type: 'sawtooth', freq: 300, to: 90, dur: 0.3, vol: 0.14 });
+      tone({ type: 'square', freq: 150, to: 60, dur: 0.25, vol: 0.08, delay: 0.05 });
+    },
+    teleport() {
+      tone({ type: 'sine', freq: 1200, to: 200, dur: 0.16, vol: 0.12 });
+      tone({ type: 'sine', freq: 200, to: 1200, dur: 0.16, vol: 0.12, delay: 0.1 });
+    },
+    pop() {
+      tone({ type: 'sine', freq: 620, to: 880, dur: 0.08, vol: 0.09 });
+    },
     turnStart() {
       tone({ type: 'sine', freq: 520, dur: 0.09, vol: 0.1 });
       tone({ type: 'sine', freq: 780, dur: 0.12, vol: 0.1, delay: 0.09 });

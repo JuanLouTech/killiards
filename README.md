@@ -33,7 +33,20 @@ connection log with a copy button.
   The player currently shooting is immune to ball damage (but not border damage).
 - At 0 HP a ball explodes and leaves a grey **dead ball**: takes no damage, has
   extra drag, and can be pushed into living players as a weapon.
-- Match ends when one player remains; ranking is by survival time.
+- **Power-ups** appear on the table once in a while (max 3, gone after 4 turns).
+  Whichever ball touches one stores it for *that player's* next shot — including
+  balls you shove into them. Buffs: 💥 blast (first contact explodes), ⚡ boost
+  (stronger shot), 💚 repair. Traps: ☠️ poison, 🐜 tiny ball, 🪨 heavy ball.
+  Identity is visible: dodge the traps, or push enemies into them.
+- Some tables have **teleporters** (paired rings that preserve velocity, with a
+  re-entry lock) and **pushable barriers** (heavy glowing squares you can launch
+  at people). They're simulated in the same recording, so replays stay exact.
+- The host can add up to **3 bots** in the lobby (yellow ring); the host's device
+  simulates their turns like normal shots, so guests just see turns arrive.
+- **Emotes**: a reaction bar under the pad broadcasts floating emojis any time.
+- Match ends when one player remains; ranking is by survival time. Before the
+  ranking, the **best play** of the match (most damage + kills) is replayed —
+  skippable, chosen identically on every device with no extra networking.
 
 ## Run locally
 

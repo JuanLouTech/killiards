@@ -232,6 +232,19 @@ input[type='text']:focus { border-color: var(--neon); }
 .p-ready { font-size: 10px; font-weight: 800; letter-spacing: 1px; color: var(--dim); }
 .p-ready.on { color: var(--neon); }
 
+/* bots: yellow glowing ring, matching their in-game look */
+.p-ball.bot { border-color: #ffd84d; box-shadow: 0 0 10px rgba(255, 216, 77, 0.55); }
+.p-name .bot-tag { color: #ffd84d; border-color: #ffd84d; }
+.player-card .bot-remove { padding: 4px 9px; font-size: 12px; color: var(--dim); flex: none; }
+.player-card .bot-remove:active { color: var(--text); }
+.mini.add-bot {
+  margin-top: 8px;
+  align-self: flex-start;
+  color: #ffd84d;
+  border-color: rgba(255, 216, 77, 0.4);
+}
+.mini.add-bot:disabled { opacity: 0.35; cursor: default; }
+
 #table-select { display: flex; gap: 10px; flex-wrap: wrap; }
 .table-opt {
   border: 2px solid var(--line);
@@ -412,6 +425,58 @@ input[type='text']:focus { border-color: var(--neon); }
 }
 #pad-hint.hidden { display: none; }
 @keyframes pulse { 50% { opacity: 0.35; } }
+
+/* ---------- emotes ---------- */
+
+#emote-bar {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+}
+.emote-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(23, 26, 43, 0.85);
+  font-size: 20px;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+.emote-btn:active { transform: scale(1.25); border-color: var(--neon); }
+
+/* the landscape controls column is narrow: shrink and lift the emotes clear
+   of the corner toggles */
+@media (orientation: landscape) {
+  #emote-bar { gap: 4px; bottom: 54px; }
+  .emote-btn { width: 34px; height: 34px; font-size: 17px; }
+}
+
+/* ---------- best play banner ---------- */
+
+#bestplay-bar {
+  display: none;
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 14px;
+  background: rgba(13, 15, 26, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 16px;
+  z-index: 6;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 0 24px rgba(65, 255, 90, 0.2);
+  white-space: nowrap;
+}
+#bestplay-bar.show { display: flex; }
 
 #spin-box {
   position: absolute;

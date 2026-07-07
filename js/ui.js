@@ -87,7 +87,8 @@ const UI = {
         name, emoji: this.profile.emoji, color: this.profile.color,
       }));
     } catch (e) { /* ignore */ }
-    this.profile.name = name || 'Player ' + Math.floor(10 + Math.random() * 90);
+    // no forced default: nameless players are shown by their emoji
+    this.profile.name = name;
   },
 
   // ---- lobby ----
@@ -124,6 +125,34 @@ const UI = {
     }
   },
 
+  // ---- bots (host only) ----
+
+  MAX_BOTS: 3,
+
+  hostAddBot() {
+    if (!Net.isHost || this.inMatch) return;
+    const bots = this.lobby.players.filter(p => p.isBot);
+    if (bots.length >= this.MAX_BOTS || this.lobby.players.length >= 6) return;
+    const used = new Set(this.lobby.players.map(p => p.emoji));
+    const usedColors = new Set(this.lobby.players.map(p => p.color));
+    const emoji = shuffle(EMOJI_LIST.filter(e => !used.has(e)))[0] || '🤖';
+    const color = shuffle(PLAYER_COLORS.filter(c => !usedColors.has(c)))[0] ||
+      PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+    let n = 1;
+    while (this.lobby.players.some(p => p.id === 'B' + n)) n++;
+    this.lobby.players.push({
+      id: 'B' + n, name: '', emoji, color,
+      ready: true, isHost: false, isBot: true,
+    });
+    this.hostBroadcastLobby();
+  },
+
+  hostRemoveBot(id) {
+    if (!Net.isHost || this.inMatch) return;
+    this.lobby.players = this.lobby.players.filter(p => p.id !== id);
+    this.hostBroadcastLobby();
+  },
+
   toggleReady() {
     if (Net.isHost) {
       const me = this.lobby.players.find(p => p.id === Net.myId);
@@ -143,13 +172,27 @@ const UI = {
     this.lobby.players.forEach(p => {
       const me = p.id === Net.myId;
       const div = document.createElement('div');
-      div.className = 'player-card' + (me ? ' me' : '');
+      div.className = 'player-card' + (me ? ' me' : '') + (p.isBot ? ' bot' : '');
       div.innerHTML = `
-        <span class="p-ball" style="background:${p.color}">${p.emoji}</span>
-        <span class="p-name">${esc(p.name)}${p.isHost ? ' <i>HOST</i>' : ''}${me ? ' <em>(you)</em>' : ''}</span>
+        <span class="p-ball${p.isBot ? ' bot' : ''}" style="background:${p.color}">${p.emoji}</span>
+        <span class="p-name">${esc(dispName(p))}${p.isHost ? ' <i>HOST</i>' : ''}${p.isBot ? ' <i class="bot-tag">BOT</i>' : ''}${me ? ' <em>(you)</em>' : ''}</span>
         <span class="p-ready ${p.ready ? 'on' : ''}">${p.ready ? 'READY' : 'WAITING'}</span>`;
+      if (p.isBot && Net.isHost) {
+        const rm = document.createElement('button');
+        rm.className = 'mini bot-remove';
+        rm.textContent = '✕';
+        rm.title = 'Remove bot';
+        rm.addEventListener('click', () => this.hostRemoveBot(p.id));
+        div.appendChild(rm);
+      }
       wrap.appendChild(div);
     });
+
+    // add-bot button (host only, max 3 bots / 6 seats)
+    const botBtn = document.getElementById('btn-add-bot');
+    const botCount = this.lobby.players.filter(p => p.isBot).length;
+    botBtn.style.display = Net.isHost ? '' : 'none';
+    botBtn.disabled = botCount >= this.MAX_BOTS || this.lobby.players.length >= 6;
 
     // table selector
     const tsel = document.getElementById('table-select');
@@ -218,7 +261,7 @@ const UI = {
       tableId = TABLES[Math.floor(Math.random() * TABLES.length)].id;
     }
     const table = getTable(tableId);
-    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color }));
+    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot }));
     const spawns = shuffle([...table.spawns]).slice(0, order.length);
     const d = { tableId, order, spawns };
     Net.matchLocked = true;
@@ -236,7 +279,7 @@ const UI = {
     d.order.forEach(p => {
       const el = document.createElement('div');
       el.className = 'roulette-card';
-      el.innerHTML = `<span class="p-ball big" style="background:${p.color}">${p.emoji}</span><span>${esc(p.name)}</span>`;
+      el.innerHTML = `<span class="p-ball big${p.isBot ? ' bot' : ''}" style="background:${p.color}">${p.emoji}</span><span>${esc(dispName(p))}</span>`;
       grid.appendChild(el);
     });
     const cards = [...grid.children];
@@ -255,7 +298,7 @@ const UI = {
       } else {
         const starter = d.order[0];
         cards[0].classList.add('win');
-        result.innerHTML = `<b style="color:${starter.color}">${esc(starter.name)}</b> starts!`;
+        result.innerHTML = `<b style="color:${starter.color}">${esc(dispName(starter))}</b> starts!`;
         SFX.fanfare();
         setTimeout(() => {
           Game.startMatch(d);
@@ -265,6 +308,19 @@ const UI = {
       }
     };
     setTimeout(stepFn, 700);
+  },
+
+  // ---- best play banner (over the game canvas, before the ranking) ----
+
+  showBestPlayBar(bp, shooter) {
+    const bar = document.getElementById('bestplay-bar');
+    document.getElementById('bestplay-title').innerHTML =
+      `🎬 Best play: <b style="color:${shooter.color}">${esc(dispName(shooter))}</b> · ${bp.score} dmg`;
+    bar.classList.add('show');
+  },
+
+  hideBestPlayBar() {
+    document.getElementById('bestplay-bar').classList.remove('show');
   },
 
   // ---- ranking ----
@@ -279,8 +335,8 @@ const UI = {
       div.className = 'rank-row' + (i === 0 ? ' winner' : '');
       div.innerHTML = `
         <span class="rank-pos">${medals[i] || (i + 1) + 'º'}</span>
-        <span class="p-ball" style="background:${b.color}">${b.emoji}</span>
-        <span class="p-name">${esc(b.name)}</span>
+        <span class="p-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>
+        <span class="p-name">${esc(dispName(b))}${b.isBot ? ' <i class="bot-tag">BOT</i>' : ''}</span>
         <span class="rank-note">${b.dead ? 'Survived ' + b.deathTurn + ' turn' + (b.deathTurn === 1 ? '' : 's') : (i === 0 ? 'WINNER' : 'Survived')}</span>`;
       list.appendChild(div);
     });
@@ -294,7 +350,7 @@ const UI = {
     Game.match = null;
     Net.matchLocked = false;
     if (Net.isHost) {
-      this.lobby.players.forEach(p => { p.ready = false; });
+      this.lobby.players.forEach(p => { p.ready = !!p.isBot; }); // bots are always ready
       this.hostBroadcastLobby();
     } else {
       this.renderLobby();

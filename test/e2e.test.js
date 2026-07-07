@@ -91,6 +91,16 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   check('host sees 3 players', true);
   check('g2 sees 3 players', await g2.evaluate(() => document.querySelectorAll('#lobby-players .player-card').length === 3));
 
+  // host adds a bot: everyone sees 4 cards, the bot one marked and ready
+  await host.click('#btn-add-bot');
+  await g2.waitForFunction(() => document.querySelectorAll('#lobby-players .player-card').length === 4, null, { timeout: 8000 });
+  check('bot visible on guests', true);
+  check('bot card is marked and ready', await g2.evaluate(() => {
+    const card = document.querySelector('#lobby-players .player-card.bot');
+    return !!card && card.querySelector('.p-ready').classList.contains('on');
+  }));
+  check('guests cannot add bots', await g2.evaluate(() => document.getElementById('btn-add-bot').style.display === 'none'));
+
   // host picks table, everyone sees it
   await host.evaluate(() => document.querySelectorAll('#table-select .table-opt')[1].click());
   await sleep(500);
@@ -107,34 +117,64 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   const starters = await Promise.all(Object.values(pages).map(p => p.evaluate(() => Game.currentBall().id)));
   check('all agree on starter', new Set(starters).size === 1);
 
-  const state = (p) => p.evaluate(() => Game.match.balls.map(b => [Math.round(b.x), Math.round(b.y), b.hp, b.dead]));
+  const state = (p) => p.evaluate(() => ({
+    mode: Game.match.mode,
+    tc: Game.match.turnCount,
+    balls: Game.match.balls.map(b => [Math.round(b.x), Math.round(b.y), b.hp, b.dead, b.storedPower]),
+    pu: Game.match.powerups.map(u => [u.id, u.k, u.x, u.y]),
+  }));
 
-  // play 3 turns, whoever's turn it is shoots; assert convergence each time
-  for (let turn = 0; turn < 3; turn++) {
+  // Wait until every page is idle past tcBefore with identical state. Bot
+  // turns run on the host's own clock, so lock-step waits don't work; poll.
+  const settle = async (tcBefore) => {
+    for (let i = 0; i < 240; i++) {
+      const snaps = await Promise.all(Object.values(pages).map(state));
+      const same = snaps.every(s => JSON.stringify(s) === JSON.stringify(snaps[0]));
+      const done = snaps.every(s => (s.mode === 'idle' && s.tc > tcBefore) || s.mode === 'over');
+      if (same && done) return snaps[0];
+      await sleep(250);
+    }
+    return null;
+  };
+
+  // play 4 turns (with 4 players that includes the bot's turn, host-simulated);
+  // whoever's turn it is shoots; assert convergence each time
+  let botPlayed = false;
+  for (let turn = 0; turn < 4; turn++) {
     let shooterTag = null;
     for (const [tag, p] of Object.entries(pages)) {
       if (await p.evaluate(() => Game.currentBall().id === Net.myId)) { shooterTag = tag; break; }
     }
-    check(`turn ${turn + 1}: someone has the turn locally`, !!shooterTag);
-    const shooter = pages[shooterTag];
     const tcBefore = await host.evaluate(() => Game.match.turnCount);
-    const angle = 0.5 + turn * 1.9;
-    await shooter.evaluate((a) => Game.shoot({ dx: Math.cos(a), dy: Math.sin(a), power: 0.95, spin: { x: 0.2, y: -0.2 } }), angle);
-    // a turn is only fully finished when turnCount advances (post end-sequence)
-    for (const p of Object.values(pages))
-      await p.waitForFunction((tc) => Game.match.turnCount === tc + 1 || Game.match.mode === 'over', tcBefore, { timeout: 60000 });
-    const [sh, s1, s2] = await Promise.all([state(host), state(g1), state(g2)]);
-    const same = JSON.stringify(sh) === JSON.stringify(s1) && JSON.stringify(s1) === JSON.stringify(s2);
-    check(`turn ${turn + 1} by ${shooterTag}: states converge`, same);
-    if (!same) { console.log(JSON.stringify(sh), JSON.stringify(s1), JSON.stringify(s2)); break; }
+    if (!shooterTag) {
+      // nobody local owns the turn: must be the bot — the host plays it alone
+      check(`turn ${turn + 1}: unowned turn belongs to the bot`, await host.evaluate(() => Game.currentBall().isBot));
+      botPlayed = true;
+    } else {
+      const angle = 0.5 + turn * 1.9;
+      await pages[shooterTag].evaluate((a) => Game.shoot({ dx: Math.cos(a), dy: Math.sin(a), power: 0.95, spin: { x: 0.2, y: -0.2 } }), angle);
+    }
+    const settled = await settle(tcBefore);
+    check(`turn ${turn + 1} by ${shooterTag || 'BOT'}: states converge`, !!settled);
+    if (!settled) {
+      console.log(JSON.stringify(await Promise.all(Object.values(pages).map(state))));
+      break;
+    }
     const turns = await Promise.all(Object.values(pages).map(p => p.evaluate(() => Game.currentBall().id)));
     check(`turn ${turn + 1}: everyone agrees whose turn is next`, new Set(turns).size === 1);
   }
-  console.log('hp after 3 turns:', JSON.stringify(await state(host)));
+  check('the bot got a turn and auto-played it', botPlayed);
+  console.log('hp after 4 turns:', JSON.stringify((await state(host)).balls));
 
-  // damage bars visible again after settling (barsAlpha back up)
-  await sleep(1200);
-  check('bars visible after turn', await host.evaluate(() => Game.match.barsAlpha > 0.8));
+  // emotes: g2 reacts, everyone (host relays) sees the floater
+  await g2.click('#emote-bar .emote-btn');
+  await host.waitForFunction(() => Renderer.floaters.length > 0, null, { timeout: 5000 });
+  check('emote relayed to host', true);
+  check('emote relayed to other guest', await g1.evaluate(() => Renderer.floaters.length > 0));
+
+  // damage bars visible again once idle (a bot may still be playing: wait)
+  await host.waitForFunction(() => Game.match.mode === 'idle' && Game.match.barsAlpha > 0.8, null, { timeout: 30000 });
+  check('bars visible after turn', true);
 
   // simulate g1 disconnect mid-match (shim can't detect page close, so close
   // the connection explicitly — real PeerJS fires 'close' on ICE drop too)
@@ -144,17 +184,22 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   const deadOnHost = await host.evaluate(() => Game.match.balls.filter(b => b.dead).length);
   const deadOnG2 = await g2.evaluate(() => Game.match.balls.filter(b => b.dead).length);
   check('disconnect kills ball everywhere', deadOnHost === 1 && deadOnG2 === 1);
-  // with 3 players and one dead, match should now be over (1 alive... no: 2 alive)
+  // 4 players (incl. the bot), one disconnected -> 3 still alive
   const aliveHost = await host.evaluate(() => Game.match.balls.filter(b => !b.dead).length);
-  check('two players remain alive', aliveHost === 2);
+  check('three players remain alive', aliveHost === 3);
   const curH = await host.evaluate(() => Game.currentBall().dead);
   check('current turn holder is alive', curH === false);
 
-  // ranking screen renders
+  // ranking screen renders (nameless bot shown by its emoji)
   await host.evaluate(() => UI.showRanking(Game.ranking()));
-  check('ranking rows render', await host.evaluate(() => document.querySelectorAll('#ranking-list .rank-row').length === 3));
+  check('ranking rows render', await host.evaluate(() => document.querySelectorAll('#ranking-list .rank-row').length === 4));
   check('winner row not a dead player', await host.evaluate(() =>
     document.querySelector('#ranking-list .rank-row.winner .rank-note').textContent === 'WINNER'));
+  check('bot row shows its emoji as name', await host.evaluate(() => {
+    const bot = Game.match.balls.find(b => b.isBot);
+    return [...document.querySelectorAll('#ranking-list .rank-row .p-name')]
+      .some(el => el.textContent.includes(bot.emoji));
+  }));
 
   await host.screenshot({ path: __dirname + '/shot-host.png' });
   await g2.screenshot({ path: __dirname + '/shot-guest.png' });
