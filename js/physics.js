@@ -15,6 +15,7 @@ const PHYS = {
   BORDER_DMG: 8,       // fixed damage on every NEW border contact
   BALL_DMG_K: 0.022,   // damage per unit of speed change in ball contacts
   MAX_T: 20,           // safety cap on turn length (seconds)
+  MAX_HP: 110,         // starting health
 };
 
 // Closest point on segment ab to point p.

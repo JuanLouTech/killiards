@@ -13,7 +13,7 @@ const Game = {
     const balls = d.order.map((p, i) => ({
       id: p.id, name: p.name, emoji: p.emoji, color: p.color,
       x: d.spawns[i][0], y: d.spawns[i][1], vx: 0, vy: 0,
-      hp: 100, hpShow: 100, dead: false, deathTurn: null, lastBorder: null,
+      hp: PHYS.MAX_HP, hpShow: PHYS.MAX_HP, dead: false, deathTurn: null, lastBorder: null,
     }));
     this.match = {
       table, balls,

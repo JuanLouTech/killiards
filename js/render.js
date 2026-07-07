@@ -18,15 +18,24 @@ const Renderer = {
     this.ctx = canvas.getContext('2d');
     this.wrap = wrap;
     window.addEventListener('resize', () => this.resize());
+    // catches layout changes that don't fire window resize (controls column
+    // appearing, hand-side swap, orientation flips…)
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => this.resize()).observe(wrap);
+    }
     this.resize();
   },
 
   resize() {
     if (!this.wrap) return;
-    const rect = this.wrap.getBoundingClientRect();
-    if (rect.width < 2 || rect.height < 2) return;
+    // content-box size: clientWidth/Height include padding, so subtract it —
+    // otherwise the canvas overflows under neighbouring UI
+    const cs = getComputedStyle(this.wrap);
+    const availW = this.wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const availH = this.wrap.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    if (availW < 2 || availH < 2) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const s = Math.min(rect.width / TABLE_W, rect.height / TABLE_H);
+    const s = Math.min(availW / TABLE_W, availH / TABLE_H);
     const cssW = TABLE_W * s, cssH = TABLE_H * s;
     this.canvas.style.width = cssW + 'px';
     this.canvas.style.height = cssH + 'px';
@@ -232,9 +241,14 @@ const Renderer = {
   },
 
   drawLabel(ctx, b) {
-    const w = 96, h = 13;
+    const w = 124, h = 15, r = 7;
     const x = b.x - w / 2;
-    const y = b.y - PHYS.R - 30;
+    const y = b.y - PHYS.R - 32;
+    const round = (rx, ry, rw, rh, rr) => {
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(rx, ry, rw, rh, rr);
+      else ctx.rect(rx, ry, rw, rh);
+    };
     ctx.save();
     // name
     ctx.font = 'bold 19px sans-serif';
@@ -245,13 +259,19 @@ const Renderer = {
     ctx.fillStyle = '#fff';
     ctx.fillText(b.name, b.x, y - 3);
     // bar
-    const pct = Math.max(0, Math.min(1, b.hpShow / 100));
+    const pct = Math.max(0, Math.min(1, b.hpShow / PHYS.MAX_HP));
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+    round(x - 2, y - 2, w + 4, h + 4, r + 2);
+    ctx.fill();
     ctx.fillStyle = '#26262e';
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = `hsl(${pct * 115}, 90%, 48%)`;
-    ctx.fillRect(x, y, w * pct, h);
+    round(x, y, w, h, r);
+    ctx.fill();
+    if (pct > 0) {
+      round(x, y, w, h, r);
+      ctx.clip();
+      ctx.fillStyle = `hsl(${pct * 115}, 90%, 48%)`;
+      ctx.fillRect(x, y, w * pct, h);
+    }
     ctx.restore();
   },
 

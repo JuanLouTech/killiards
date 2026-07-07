@@ -93,6 +93,16 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-exit').addEventListener('click', () => window.location.reload());
   document.querySelector('#fatal button').addEventListener('click', () => window.location.reload());
 
+  // ---- left/right-handed controls (landscape only) ----
+  const gameScreen = document.getElementById('screen-game');
+  if (localStorage.getItem('killiards-hand') === 'L') gameScreen.classList.add('lefty');
+  document.getElementById('hand-toggle').addEventListener('click', () => {
+    const lefty = gameScreen.classList.toggle('lefty');
+    localStorage.setItem('killiards-hand', lefty ? 'L' : 'R');
+    Renderer.resize();
+    Controls.resize();
+  });
+
   // ---- connection log panel (tap the logo 3× or open with ?debug) ----
   const netlog = document.getElementById('netlog');
   const showLog = () => {

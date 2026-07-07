@@ -2,16 +2,13 @@
 
 Turn-based online billiard combat. Last ball alive wins.
 
-Pure static web app — **no backend**. Multiplayer uses two transports:
-
-1. [PeerJS](https://peerjs.com) (WebRTC data channels brokered by the public
-   PeerJS cloud + Google STUN): the room creator's peer id is the 5-letter room
-   code and everyone connects directly to them.
-2. **Automatic relay fallback**: if the WebRTC channel doesn't open within a few
-   seconds (mDNS blocked, no NAT hairpinning, UDP-hostile networks), the join
-   transparently falls back to relaying messages through public MQTT-over-WSS
-   brokers (EMQX / HiveMQ). Works on any network; turn-based play doesn't notice
-   the latency. Both transports can coexist in one lobby.
+Pure static web app — **no backend**. All multiplayer traffic relays through
+public MQTT-over-WSS brokers (EMQX / HiveMQ, used redundantly with message
+dedup). WebRTC was deliberately dropped: it fails on many home networks (mDNS
+candidates + no NAT hairpinning, and no public TURN exists anymore), while a
+WebSocket relay connects in ~1-2s on any network — and a turn-based game never
+notices the latency. The 5-letter room code is the host's locally generated id;
+up to **6 players** per room.
 
 Connection diagnostics: tap the logo 3× (or add `?debug` to the URL) for a live
 connection log with a copy button.
@@ -61,7 +58,7 @@ To play across the internet, deploy the folder to any static host
 - `js/physics.js` — fixed-step simulation, recording, damage rules, spin
 - `js/render.js` — canvas renderer: neon borders, balls, bars, particles, shake
 - `js/controls.js` — slingshot pad + spin widget
-- `js/net.js` — PeerJS star topology (host relays)
+- `js/net.js` — relay transport over public MQTT brokers (host relays)
 - `js/game.js` — turn conductor: live sim / replay / end-of-turn / ranking
 - `js/ui.js` — screens, lobby state, roulette, ranking
 - `js/main.js` — boot + message wiring
@@ -72,10 +69,7 @@ To play across the internet, deploy the folder to any static host
   obstacles, spin, recording size/consistency). No dependencies.
 - `node test/e2e.test.js` — full 3-player match in headless Chromium
   (lobby → table select → roulette → turns → replay convergence → disconnect).
-  Needs `npm i playwright-core` and a Playwright Chromium in the usual cache.
-  WebRTC is replaced by a BroadcastChannel-backed Peer shim because headless
-  browsers launched from a shell on macOS can't complete ICE (Local Network
-  permission); the real PeerJS path is the same proven setup as Cyber Soccer.
-- `node test/relay.e2e.test.js` — relay-fallback E2E: WebRTC is stubbed to
-  never connect and a 2-player match must join and play through the real
+  Hermetic: the MQTT layer is shimmed over BroadcastChannel. Needs
+  `npm i playwright-core` and a Playwright Chromium in the usual cache.
+- `node test/relay.e2e.test.js` — live E2E: a 2-player match through the real
   public MQTT brokers. Needs internet.

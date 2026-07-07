@@ -1,5 +1,5 @@
-// Full-app E2E with a BroadcastChannel-backed Peer shim (WebRTC is blocked in
-// this environment; the shim implements the same PeerJS surface the app uses).
+// Full-app E2E with a BroadcastChannel-backed MQTT shim (hermetic: no real
+// brokers). Exercises the whole relay transport except the wire itself.
 // 3 players: exercises lobby sync, host relay of guest turns, roulette
 // agreement, replay convergence and turn rotation.
 const { chromium } = require('playwright-core');
@@ -20,62 +20,31 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const FAKE_PEER = `
-class FakeConn {
-  constructor(peer, remote, cid) { this._p = peer; this.peer = remote; this._cid = cid; this.open = false; this._h = {}; this._q = []; }
-  on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); }
-  _emit(ev, ...a) {
-    // like real PeerJS: no data delivery before 'open' has fired
-    if (ev === 'data' && !this.open) { this._q.push(a[0]); return; }
-    (this._h[ev] || []).forEach(f => f(...a));
-  }
-  _open() {
-    this.open = true; this._emit('open');
-    const q = this._q; this._q = [];
-    q.forEach(d => this._emit('data', d));
-  }
-  send(d) { this._p._bc.postMessage({ kind: 'data', to: this.peer, cid: this._cid, payload: JSON.parse(JSON.stringify(d)) }); }
-  close() {
-    if (!this.open) return;
-    this.open = false;
-    this._p._bc.postMessage({ kind: 'close', to: this.peer, cid: this._cid });
-    this._emit('close');
-  }
-}
-window.Peer = class {
-  constructor(id) {
-    this.id = id; this._h = {}; this._conns = {};
-    this._bc = new BroadcastChannel('fake-peerjs');
-    this._bc.onmessage = (e) => this._route(e.data);
-    setTimeout(() => this._emit('open', this.id), 30);
-  }
-  on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); }
-  _emit(ev, ...a) { (this._h[ev] || []).forEach(f => f(...a)); }
-  _route(m) {
-    if (m.to !== this.id) return;
-    if (m.kind === 'connect') {
-      const conn = new FakeConn(this, m.from, m.cid);
-      this._conns[m.cid] = conn;
-      this._emit('connection', conn);
-      this._bc.postMessage({ kind: 'accept', to: m.from, cid: m.cid });
-      setTimeout(() => conn._open(), 40);
-    } else if (m.kind === 'accept') {
-      const c = this._conns[m.cid]; if (c) setTimeout(() => c._open(), 10);
-    } else if (m.kind === 'data') {
-      const c = this._conns[m.cid]; if (c) c._emit('data', m.payload);
-    } else if (m.kind === 'close') {
-      const c = this._conns[m.cid];
-      if (c && c.open) { c.open = false; c._emit('close'); }
-    }
-  }
-  connect(code) {
-    const cid = Math.random().toString(36).slice(2);
-    const conn = new FakeConn(this, code, cid);
-    this._conns[cid] = conn;
-    setTimeout(() => this._bc.postMessage({ kind: 'connect', from: this.id, to: code, cid }), 30);
-    return conn;
-  }
-  destroy() { this._bc.close(); }
+const FAKE_MQTT = `
+window.mqtt = {
+  connect() {
+    const client = {
+      connected: false, _h: {}, _subs: [],
+      on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); return this; },
+      _emit(ev, ...a) { (this._h[ev] || []).forEach(f => f(...a)); },
+      subscribe(t) { this._subs.push(t); },
+      publish(topic, payload) { this._bc.postMessage({ topic, payload }); },
+      end() {},
+    };
+    const match = (f, t) => {
+      const fs = f.split('/'), ts = t.split('/');
+      return fs.length === ts.length && fs.every((s, i) => s === '+' || s === ts[i]);
+    };
+    client._bc = new BroadcastChannel('fake-mqtt');
+    client._bc.onmessage = (e) => {
+      const { topic, payload } = e.data;
+      if (client._subs.some(f => match(f, topic))) {
+        client._emit('message', topic, { toString: () => payload });
+      }
+    };
+    setTimeout(() => { client.connected = true; client._emit('connect'); }, 20);
+    return client;
+  },
 };
 `;
 
@@ -87,9 +56,7 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await new Promise(r => server.listen(8125, r));
   const browser = await chromium.launch({ executablePath: EXE });
   const context = await browser.newContext({ viewport: { width: 420, height: 880 } });
-  await context.addInitScript(FAKE_PEER);
-  // keep the shim: serve an empty script instead of the real peerjs bundle
-  await context.route('**/peerjs*', route => route.fulfill({ contentType: 'text/javascript', body: '/* shimmed */' }));
+  await context.addInitScript(FAKE_MQTT);
   // keep the test hermetic: no real relay brokers
   await context.route('**/mqtt*', route => route.fulfill({ contentType: 'text/javascript', body: '/* shimmed */' }));
   const errors = [];

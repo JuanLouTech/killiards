@@ -1,7 +1,5 @@
-// Relay-fallback E2E: simulates a network where WebRTC can NEVER connect
-// (the exact failure reported on real home networks: candidates exchange but
-// ICE never completes). PeerJS is replaced by a stub whose connections never
-// open, so joining must fall back to the REAL public MQTT relay brokers.
+// Live-relay E2E: runs the app unmodified against the REAL public MQTT
+// brokers — verifies the actual production transport end to end.
 // Requires internet access. Run with: node test/relay.e2e.test.js
 const { chromium } = require('playwright-core');
 const http = require('http');
@@ -21,17 +19,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-// A Peer whose broker registration works but whose connections never open —
-// models "signaling ok, ICE stuck at checking".
-const DEAD_RTC_PEER = `
-window.Peer = class {
-  constructor(id) { this.id = id; this._h = {}; setTimeout(() => this._emit('open', id), 30); }
-  on(ev, fn) { (this._h[ev] = this._h[ev] || []).push(fn); }
-  _emit(ev, ...a) { (this._h[ev] || []).forEach(f => f(...a)); }
-  connect() { return { open: false, on() {}, close() {}, send() {} }; }
-  destroy() {}
-};
-`;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let fail = 0;
@@ -41,8 +28,6 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await new Promise(r => server.listen(8140, r));
   const browser = await chromium.launch({ executablePath: EXE });
   const context = await browser.newContext({ viewport: { width: 420, height: 880 } });
-  await context.addInitScript(DEAD_RTC_PEER);
-  await context.route('**/peerjs*', route => route.fulfill({ contentType: 'text/javascript', body: '/* dead rtc */' }));
   const errors = [];
   const mkPage = async (tag) => {
     const page = await context.newPage();
@@ -71,7 +56,6 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await guest.fill('#join-input', code);
   await guest.click('#btn-join');
 
-  // rtc gives up after 6s, then the relay handshake takes ~1-3s
   await guest.waitForFunction(() => document.getElementById('screen-lobby').classList.contains('active'), null, { timeout: 30000 });
   check('guest joined via relay', true);
   check('guest server is relay conn', await guest.evaluate(() => Net.server && Net.server.relay === true));
