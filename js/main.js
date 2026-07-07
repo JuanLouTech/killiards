@@ -54,6 +54,12 @@ window.addEventListener('DOMContentLoaded', () => {
     Game.onTurnResult(d);
   });
 
+  // ---- a shot was fired somewhere: its device is now simulating ----
+  Net.on('shot', (d, from) => {
+    if (Net.isHost) Net.broadcast({ t: 'shot', d }, from);
+    Game.onShotFired(d);
+  });
+
   // ---- emotes: everyone can react at any time during a match ----
   Net.on('emote', (d, from) => {
     if (Net.isHost) Net.broadcast({ t: 'emote', d }, from);

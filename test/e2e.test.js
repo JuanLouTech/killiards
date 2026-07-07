@@ -198,8 +198,12 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
     check('shot clock visible on the active player', true);
     const tcBefore = await host.evaluate(() => Game.match.turnCount);
     await shooter.evaluate(() => { Game.match.turnTimer = 0.8; });
-    await watcher.waitForFunction(() => document.getElementById('turn-sub').textContent.includes('SIMULATING'), null, { timeout: 20000 });
-    check('watchers see SIMULATING…', true);
+    // the watcher's own table is still idle (no recording yet) but it must
+    // already know a shot is being simulated on the shooter's device
+    await watcher.waitForFunction(() =>
+      Game.match.mode === 'idle' && document.getElementById('turn-sub').textContent.includes('SIMULATING'),
+    null, { timeout: 20000 });
+    check('watchers see SIMULATING… while waiting for the recording', true);
     check('shot clock auto-fires the turn', !!(await settle(tcBefore)));
   }
 

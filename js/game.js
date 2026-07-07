@@ -30,6 +30,7 @@ const Game = {
       mode: 'idle',       // idle | live | replay | end | bestplay | over
       sim: null, replay: null, endPhase: null, turnQueue: [],
       activeFx: null,     // stored power consumed by the current shot
+      waitingSimTc: null, // turn number someone announced a shot for
       hpAtTurn: balls.map(b => b.hp),
       deadAtTurn: balls.map(b => b.dead),
       barsAlpha: 1,
@@ -125,8 +126,19 @@ const Game = {
       onEvent: (ev) => this.handleEvent(ev),
     });
     m.mode = 'live';
+    // tell everyone the shot happened NOW — the recording only ships when the
+    // simulation settles, and until then their tables sit still
+    Net.send({ t: 'shot', d: { tc: m.turnCount } });
     SFX.shoot(input.power);
     Controls.setTurn({ active: false, color: shooter.color, message: '&nbsp;' });
+  },
+
+  // Another device fired its shot and is busy simulating: show SIMULATING…
+  // until its recording arrives (matched by turn number, so a notice that
+  // outruns our lagging replay still applies once we catch up).
+  onShotFired(d) {
+    const m = this.match;
+    if (m) m.waitingSimTc = d.tc;
   },
 
   finishLiveTurn() {
@@ -203,6 +215,7 @@ const Game = {
 
   startReplay(d) {
     const m = this.match;
+    m.waitingSimTc = null; // the wait is over: we're about to see the motion
     this.scoreBestPlay(d);
     // effect visuals during the replay (positions come from the frames)
     if (d.fx === 'tiny') m.balls[d.sh].rMul = PHYS.TINY_R;
@@ -302,7 +315,9 @@ const Game = {
       const s = Math.ceil(Math.max(0, m.turnTimer));
       text = `⏱ ${s}s`;
       if (s <= 10) cls = 'urgent';
-    } else if (m && (m.mode === 'replay' || (m.mode === 'live' && cur && cur.id !== Net.myId))) {
+    } else if (m && m.mode === 'idle' && m.waitingSimTc === m.turnCount) {
+      // shot already fired, the active device is simulating — our table just
+      // sits still until the recording arrives, so say why
       text = 'SIMULATING…';
       cls = 'simulating';
     }
