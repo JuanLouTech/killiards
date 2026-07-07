@@ -8,6 +8,10 @@ const Game = {
   running: false,
   lastFrame: 0,
   bestPlay: null,
+  TURN_SECONDS: 60,
+
+  // separated so tests can stub it; rAF already pauses when the tab is hidden
+  hasFocus() { return typeof document !== 'undefined' && document.hasFocus(); },
 
   // d: {tableId, order:[{id,name,emoji,color,isBot}], spawns:[[x,y]...]}
   startMatch(d) {
@@ -44,6 +48,7 @@ const Game = {
   beginTurn() {
     const m = this.match;
     m.mode = 'idle';
+    m.turnTimer = this.TURN_SECONDS;
     m.hpAtTurn = m.balls.map(b => b.hp);
     m.deadAtTurn = m.balls.map(b => b.dead);
     const cur = this.currentBall();
@@ -287,6 +292,28 @@ const Game = {
     else if (ev.victims && ev.victims.length) Renderer.addShake(1.5);
   },
 
+  // Status line under the turn banner: shot clock on your turn, SIMULATING…
+  // for everyone watching a recorded/live turn play out.
+  updateTurnSub() {
+    const m = this.match;
+    let text = '', cls = '';
+    const cur = m ? this.currentBall() : null;
+    if (m && m.mode === 'idle' && cur && cur.id === Net.myId) {
+      const s = Math.ceil(Math.max(0, m.turnTimer));
+      text = `⏱ ${s}s`;
+      if (s <= 10) cls = 'urgent';
+    } else if (m && (m.mode === 'replay' || (m.mode === 'live' && cur && cur.id !== Net.myId))) {
+      text = 'SIMULATING…';
+      cls = 'simulating';
+    }
+    if (text !== this._subText || cls !== this._subCls) {
+      this._subText = text;
+      this._subCls = cls;
+      const el = document.getElementById('turn-sub');
+      if (el) { el.textContent = text; el.className = cls; }
+    }
+  },
+
   // ---- emotes ----
 
   showEmote(d) {
@@ -495,7 +522,19 @@ const Game = {
       this.stepReplay(dt);
     } else if (m.mode === 'end' && m.endPhase) {
       this.stepEnd(dt);
+    } else if (m.mode === 'idle') {
+      // 60s shot clock: only ticks on the active player's device while the
+      // app is focused (rAF already pauses it in the background)
+      const cur = this.currentBall();
+      if (cur && cur.id === Net.myId && this.hasFocus()) {
+        m.turnTimer -= dt;
+        if (m.turnTimer <= 0) {
+          UI.toast('⏱ Time is up — auto shot!');
+          this.performShot(this.botPlan());
+        }
+      }
     }
+    this.updateTurnSub();
 
     // bars visible when balls are at rest, hidden while they move
     const barsTarget = (m.mode === 'live' || m.mode === 'replay' || m.mode === 'bestplay') ? 0 : 1;

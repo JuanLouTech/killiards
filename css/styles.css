@@ -383,6 +383,12 @@ input[type='text']:focus { border-color: var(--neon); }
     right: 100px;
     text-align: left;
   }
+  #turn-sub {
+    top: 46px;
+    left: 14px;
+    right: 100px;
+    text-align: left;
+  }
   #hand-toggle { display: block; }
 
   .screen.active.game.lefty { flex-direction: row-reverse; }
@@ -390,6 +396,7 @@ input[type='text']:focus { border-color: var(--neon); }
   .game.lefty #controls { border-left: none; border-right: 1px solid var(--line); }
   .game.lefty #spin-box { right: auto; left: 12px; }
   .game.lefty #turn-banner { left: 100px; right: 14px; text-align: right; }
+  .game.lefty #turn-sub { left: 100px; right: 14px; text-align: right; }
   .game.lefty #hand-toggle { right: auto; left: 12px; }
   .game.lefty #help-toggle { left: auto; right: 12px; }
 }
@@ -408,6 +415,24 @@ input[type='text']:focus { border-color: var(--neon); }
   z-index: 3;
 }
 #turn-banner b { font-weight: 800; }
+
+/* status under the banner: shot clock / SIMULATING… */
+#turn-sub {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--dim);
+  pointer-events: none;
+  z-index: 3;
+  min-height: 14px;
+}
+#turn-sub.urgent { color: #ff5a5a; animation: pulse 0.7s ease-in-out infinite; }
+#turn-sub.simulating { color: var(--accent2); animation: pulse 1.4s ease-in-out infinite; }
 
 #pad-area { position: absolute; inset: 0; }
 #pad-canvas { position: absolute; inset: 0; touch-action: none; }

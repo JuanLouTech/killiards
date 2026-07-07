@@ -176,6 +176,33 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await host.waitForFunction(() => Game.match.mode === 'idle' && Game.match.barsAlpha > 0.8, null, { timeout: 30000 });
   check('bars visible after turn', true);
 
+  // shot clock: on the shooter's page (focus stubbed — headless pages report
+  // no focus) the timer shows, runs out, and fires the turn by itself; other
+  // pages show SIMULATING… while the recording plays
+  {
+    // if a bot holds the turn, let it finish first
+    for (let i = 0; i < 3; i++) {
+      const isBot = await host.evaluate(() => Game.match.mode !== 'over' && Game.currentBall().isBot);
+      if (!isBot) break;
+      await settle(await host.evaluate(() => Game.match.turnCount));
+    }
+    let clockTag = null;
+    for (const [tag, p] of Object.entries(pages)) {
+      if (await p.evaluate(() => Game.match.mode === 'idle' && Game.currentBall().id === Net.myId)) { clockTag = tag; break; }
+    }
+    check('shot clock: a human holds the turn', !!clockTag);
+    const shooter = pages[clockTag];
+    const watcher = clockTag === 'host' ? g2 : host;
+    await shooter.evaluate(() => { Game.hasFocus = () => true; });
+    await shooter.waitForFunction(() => document.getElementById('turn-sub').textContent.startsWith('⏱'), null, { timeout: 5000 });
+    check('shot clock visible on the active player', true);
+    const tcBefore = await host.evaluate(() => Game.match.turnCount);
+    await shooter.evaluate(() => { Game.match.turnTimer = 0.8; });
+    await watcher.waitForFunction(() => document.getElementById('turn-sub').textContent.includes('SIMULATING'), null, { timeout: 20000 });
+    check('watchers see SIMULATING…', true);
+    check('shot clock auto-fires the turn', !!(await settle(tcBefore)));
+  }
+
   // simulate g1 disconnect mid-match (shim can't detect page close, so close
   // the connection explicitly — real PeerJS fires 'close' on ICE drop too)
   await g1.evaluate(() => Net.server.close());

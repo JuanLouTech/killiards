@@ -45,7 +45,7 @@ const PHYS = {
   HEAVY_SPEED: 0.55,
   HEAVY_M: 2.2,
   TINY_R: 0.62,
-  TINY_M: 0.55,
+  TINY_M: 0.3,   // very light: a tiny ball barely pushes anyone
 };
 
 // Power-up catalogue. Traps are picked up exactly like buffs — shoving an

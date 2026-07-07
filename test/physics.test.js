@@ -188,6 +188,20 @@ function check(name, cond) {
   check('heal adds energy', heal.balls[0].hp > poison.balls[0].hp);
   check('poison drains energy', poison.balls[0].hp <= 100 - PHYS.POISON_HP + PHYS.BORDER_DMG * 3);
   check('effect event recorded for replays', boost.sim.events.some(e => e.type === 'fx' && e.kind === 'boost'));
+
+  // tiny is light: a head-on hit barely moves (and barely damages) the victim
+  const headOn = (effect) => {
+    // moderate speed: the victim never reaches a wall, so displacement compares cleanly
+    const balls = mkBalls([[400, 450], [800, 450]], 2);
+    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, { effect });
+    let steps = 0;
+    while (!sim.step() && steps < 60 * 30) steps++;
+    return balls[1];
+  };
+  const vPlain = headOn(null), vTiny = headOn('tiny');
+  console.log('   victim pushed:', (vPlain.x - 800).toFixed(0), 'units by plain,', (vTiny.x - 800).toFixed(0), 'by tiny');
+  check('tiny ball pushes much less', (vTiny.x - 800) < (vPlain.x - 800) * 0.6);
+  check('tiny ball damages much less', (100 - vTiny.hp) < (100 - vPlain.hp) * 0.6);
 }
 
 // Test 14: blast explodes on first contact and area-damages others (not the shooter)
