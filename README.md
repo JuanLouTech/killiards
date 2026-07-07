@@ -15,18 +15,43 @@ connection log with a copy button.
 
 ## How it works
 
+The core rule of the whole design: **exactly one device simulates each turn, and
+everything random or physical it decides ships inside one authoritative payload.**
+Nothing is ever computed independently on two devices, so states can never diverge.
+
 - **Turn-based recorded replay**: the active player's device runs the whole physics
-  simulation locally while recording ball positions (30 fps) and every collision
-  event. When all balls stop, the recording plus the final authoritative
-  positions/health are sent to the other players, who replay it frame by frame.
+  simulation locally while recording body positions (30 fps) and every collision
+  event. When everything stops, the recording plus the final authoritative state
+  (positions, health, stored power-ups, barrier positions, remaining table
+  power-ups) is sent to the other players, who replay it frame by frame.
   Everyone always ends up seeing exactly the same thing — no realtime sync needed.
 - **Shared logical space**: the table is always 1600×900 logical units, scaled to
   fit each screen (aspect ratio preserved), so replays are faithful on any device.
+- **Bot turns run on the host only.** Bots have no device, so the host simulates
+  their shots exactly like its own; guests just receive a normal turn recording.
+  Never simulate a bot anywhere else — two simulators means two histories.
+- **Power-up spawns are rolled once**, by the device that just finished a turn,
+  and shipped inside that turn's payload — no separate spawn message, no race.
+- **Turn recordings queue.** A recording can arrive while a device is still
+  replaying the previous turn (bot turns make this common: the host plays on
+  without waiting for anyone's replay). Applying it immediately would clobber
+  the running replay and desync the turn counter, so it waits in a queue until
+  the device is idle.
+- **Barriers are just extra bodies** in the recording (frames carry balls first,
+  then barriers), and teleporters are static table features with a re-entry
+  lock — so both replay exactly like everything else.
+- The moment a shot is fired, a tiny `shot` notice is broadcast (the recording
+  itself only ships once the physics settle) so the other devices can show a
+  **SIMULATING…** status instead of a mysteriously frozen table.
+- The **best play** replayed at the end is scored identically on every device
+  from the turn payloads (damage to others + kill bonus), so everyone agrees on
+  it with zero extra networking.
 
 ## Rules
 
 - Slingshot drag to shoot; optional spin (hit point) widget changes how the ball
-  behaves on its **first** contact.
+  behaves on its **first** contact. You get **60 seconds** per turn (the clock
+  only ticks while your app is focused) — when it runs out, the shot fires itself.
 - Border contacts deal a fixed damage, but only on *new* contacts (each border
   edge has an id; sliding along the same border doesn't stack damage).
 - Ball-to-ball hits damage the victim proportionally to the speed change.
@@ -43,6 +68,8 @@ connection log with a copy button.
   at people). They're simulated in the same recording, so replays stay exact.
 - The host can add up to **3 bots** in the lobby (yellow ring); the host's device
   simulates their turns like normal shots, so guests just see turns arrive.
+- Names are optional: nameless players (and bots) show their **emoji** in the
+  turn banner, roulette, lobby and ranking instead.
 - **Emotes**: a reaction bar under the pad broadcasts floating emojis any time.
 - Match ends when one player remains; ranking is by survival time. Before the
   ranking, the **best play** of the match (most damage + kills) is replayed —
@@ -67,14 +94,29 @@ To play across the internet, deploy the folder to any static host
 ## Files
 
 - `index.html` — all screens (home / lobby / roulette / game / ranking)
-- `js/tables.js` — table definitions (obstacles + spawn points), palettes
-- `js/physics.js` — fixed-step simulation, recording, damage rules, spin
-- `js/render.js` — canvas renderer: neon borders, balls, bars, particles, shake
+- `js/tables.js` — table definitions (obstacles, teleporters, barriers, spawns), palettes
+- `js/physics.js` — fixed-step simulation & recording: damage rules, spin,
+  barriers, teleporters, power-up pickups and shot effects, `POWER_KINDS`
+- `js/render.js` — canvas renderer: neon borders, balls, bars, power-ups,
+  teleporters, barriers, particles, floating emotes, shake
 - `js/controls.js` — slingshot pad + spin widget
 - `js/net.js` — relay transport over public MQTT brokers (host relays)
-- `js/game.js` — turn conductor: live sim / replay / end-of-turn / ranking
-- `js/ui.js` — screens, lobby state, roulette, ranking
-- `js/main.js` — boot + message wiring
+- `js/game.js` — turn conductor: live sim / replay / turn queue / power-up
+  lifecycle / bot turns / shot clock / best play / ranking
+- `js/ui.js` — screens, lobby state (incl. bots), roulette, ranking
+- `js/main.js` — boot + message wiring (turn/shot/emote relays, emote bar)
+
+## Contributing
+
+PRs are welcome if they bring improvements — gameplay, tables, netcode, fixes,
+whatever makes the game better. Two things to keep in mind:
+
+1. **Respect the one-simulator rule** described above: any new mechanic must be
+   decided on the simulating device and travel inside the turn payload. If two
+   devices could compute it independently, it will desync.
+2. **Keep the tests green** (`node test/physics.test.js` and
+   `node test/e2e.test.js`) and add coverage for new mechanics — the physics
+   suite has no dependencies, so there's no excuse. 🙂
 
 ## Tests
 
