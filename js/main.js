@@ -1,0 +1,116 @@
+// Boot + network message wiring.
+
+window.addEventListener('DOMContentLoaded', () => {
+  UI.initHome();
+  Renderer.init(document.getElementById('table-canvas'), document.getElementById('table-wrap'));
+  Controls.init((shot) => Game.shoot(shot));
+
+  // unlock audio on first interaction (mobile requirement)
+  window.addEventListener('pointerdown', () => SFX.unlock(), { once: true });
+
+  // ---- peer bootstrap ----
+  Net.start(
+    (id) => { document.getElementById('my-code').textContent = id; },
+    () => UI.toast('Network error — check your connection'),
+  );
+
+  // ---- host-side messages ----
+  Net.on('profile', (d, from) => {
+    if (!Net.isHost) return;
+    UI.hostAddPlayer(from, d);
+  });
+  Net.on('ready', (_d, from) => {
+    if (!Net.isHost) return;
+    const p = UI.lobby.players.find(x => x.id === from);
+    if (p) { p.ready = !p.ready; UI.hostBroadcastLobby(); }
+  });
+  Net.on('_joined', () => {
+    // someone joined our code before we clicked "Create room": open the lobby
+    if (Net.isHost && !UI.inMatch && !UI.lobby.players.some(p => p.id === Net.myId)) {
+      UI.hostCreateLobby();
+    }
+  });
+  Net.on('_busy', () => UI.toast('That room is full or already playing'));
+  Net.on('_left', (_d, from) => {
+    if (Net.isHost) UI.hostRemovePlayer(from);
+  });
+
+  // ---- guest-side messages ----
+  Net.on('lobby', (d) => UI.guestApplyLobby(d));
+  Net.on('start', (d) => UI.handleStart(d));
+  Net.on('left', (d) => Game.playerLeft(d.id));
+  Net.on('lobbyBack', () => UI.backToLobby());
+  Net.on('_hostLost', () => {
+    if (document.getElementById('screen-home').classList.contains('active')) return;
+    UI.fatal('Connection to the host was lost.');
+  });
+
+  // ---- shared: a finished turn arrives (host relays guest recordings) ----
+  Net.on('turn', (d, from) => {
+    if (Net.isHost) Net.broadcast({ t: 'turn', d }, from);
+    Game.onTurnResult(d);
+  });
+
+  // ---- home screen buttons ----
+  document.getElementById('btn-create').addEventListener('click', () => {
+    if (!Net.myId) return UI.toast('Still connecting… try again in a second');
+    UI.hostCreateLobby();
+  });
+
+  document.getElementById('btn-join').addEventListener('click', () => {
+    const code = document.getElementById('join-input').value.trim().toUpperCase();
+    if (code.length < 4) return UI.toast('Enter a room code first');
+    if (!Net.myId) return UI.toast('Still connecting… try again in a second');
+    UI.readProfile();
+    const btn = document.getElementById('btn-join');
+    btn.disabled = true;
+    btn.textContent = 'Connecting…';
+    Net.join(code,
+      () => {
+        btn.disabled = false; btn.textContent = 'Join room';
+        Net.toHost({ t: 'profile', d: UI.profile });
+      },
+      (err) => {
+        btn.disabled = false; btn.textContent = 'Join room';
+        UI.toast(err + ' · tap the logo 3× for the connection log');
+      });
+  });
+
+  // ---- lobby / ranking buttons ----
+  // full reload is the cleanest way to tear down the peer + lobby state;
+  // the host side sees the connection close and removes us
+  document.getElementById('btn-leave').addEventListener('click', () => window.location.reload());
+  document.getElementById('lobby-copy').addEventListener('click', () => {
+    const code = document.getElementById('lobby-code').textContent;
+    navigator.clipboard.writeText(code).then(() => UI.toast('Code copied!'));
+  });
+  document.getElementById('btn-ready').addEventListener('click', () => UI.toggleReady());
+  document.getElementById('btn-start').addEventListener('click', () => UI.hostStartMatch());
+  document.getElementById('btn-again').addEventListener('click', () => {
+    Net.broadcast({ t: 'lobbyBack' });
+    UI.backToLobby();
+  });
+  document.getElementById('btn-exit').addEventListener('click', () => window.location.reload());
+  document.querySelector('#fatal button').addEventListener('click', () => window.location.reload());
+
+  // ---- connection log panel (tap the logo 3× or open with ?debug) ----
+  const netlog = document.getElementById('netlog');
+  const showLog = () => {
+    netlog.classList.add('show');
+    const el = document.getElementById('netlog-text');
+    el.textContent = Net.logs.join('\n') || '(empty)';
+    el.scrollTop = el.scrollHeight;
+  };
+  let taps = 0, tapT = 0;
+  document.querySelector('.logo').addEventListener('pointerdown', () => {
+    const now = Date.now();
+    taps = now - tapT < 600 ? taps + 1 : 1;
+    tapT = now;
+    if (taps >= 3) { taps = 0; showLog(); }
+  });
+  document.getElementById('netlog-close').addEventListener('click', () => netlog.classList.remove('show'));
+  document.getElementById('netlog-copy').addEventListener('click', () => {
+    navigator.clipboard.writeText(Net.logs.join('\n')).then(() => UI.toast('Log copied!'));
+  });
+  if (new URLSearchParams(location.search).has('debug')) showLog();
+});

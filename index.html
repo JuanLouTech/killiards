@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#04050a">
+  <title>KILLIARDS</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+  <!-- HOME -->
+  <div id="screen-home" class="screen active">
+    <div class="panel">
+      <h1 class="logo">KILL<span>IARDS</span></h1>
+      <p class="tagline">Turn-based billiard combat · online</p>
+
+      <label class="lab">Name (optional)</label>
+      <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off">
+
+      <label class="lab">Avatar</label>
+      <div id="emoji-grid"></div>
+
+      <label class="lab">Color</label>
+      <div id="color-row"></div>
+
+      <div class="code-box">
+        <div>
+          <span class="lab">Your room code</span>
+          <code id="my-code">…</code>
+        </div>
+        <button id="copy-code" class="mini" title="Copy">⧉</button>
+      </div>
+
+      <button id="btn-create" class="big-btn">Create room</button>
+
+      <div class="join-row">
+        <input id="join-input" type="text" maxlength="5" placeholder="CODE" autocomplete="off">
+        <button id="btn-join" class="big-btn join">Join room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" class="screen">
+    <div class="panel wide">
+      <button id="btn-leave" class="mini leave" title="Leave room">← Back</button>
+      <h2>Lobby <code id="lobby-code" class="inline-code"></code>
+        <button id="lobby-copy" class="mini" title="Copy room code">⧉</button>
+      </h2>
+      <div id="lobby-players"></div>
+      <label class="lab">Table</label>
+      <div id="table-select"></div>
+      <div class="btn-row">
+        <button id="btn-ready" class="big-btn alt">Ready!</button>
+        <button id="btn-start" class="big-btn" disabled>Start match</button>
+      </div>
+      <p id="lobby-hint" class="hint"></p>
+    </div>
+  </div>
+
+  <!-- ROULETTE -->
+  <div id="screen-roulette" class="screen">
+    <div class="panel wide center">
+      <h2>Who starts?</h2>
+      <div id="roulette-grid"></div>
+      <p id="roulette-result"></p>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen game">
+    <div id="table-wrap">
+      <canvas id="table-canvas"></canvas>
+    </div>
+    <div id="controls">
+      <div id="turn-banner"></div>
+      <div id="pad-area">
+        <canvas id="pad-canvas"></canvas>
+        <div id="pad-hint" class="hidden">Drag &amp; release to shoot</div>
+      </div>
+      <div id="spin-box">
+        <span class="lab">SPIN</span>
+        <div id="spin-wrap"><canvas id="spin-canvas"></canvas></div>
+        <span class="spin-hint">tap to set</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPIN (HIT POINT) MODAL -->
+  <div id="spin-modal">
+    <div class="spin-modal-box">
+      <h3>Hit point</h3>
+      <p class="hint" style="margin:0">Drag the dot — high = follow, low = draw, sides = curve</p>
+      <canvas id="spin-big"></canvas>
+      <div class="btn-row">
+        <button id="spin-big-reset" class="big-btn alt">Center</button>
+        <button id="spin-big-done" class="big-btn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RANKING -->
+  <div id="screen-ranking" class="screen">
+    <div class="panel wide center">
+      <h2>Match over</h2>
+      <div id="ranking-list"></div>
+      <div class="btn-row">
+        <button id="btn-again" class="big-btn">Back to lobby</button>
+        <button id="btn-exit" class="big-btn alt">Exit</button>
+      </div>
+      <p id="ranking-hint" class="hint"></p>
+    </div>
+  </div>
+
+  <div id="netlog">
+    <div class="netlog-bar">
+      <b>Connection log</b>
+      <span>
+        <button id="netlog-copy" class="mini">Copy</button>
+        <button id="netlog-close" class="mini">✕</button>
+      </span>
+    </div>
+    <pre id="netlog-text"></pre>
+  </div>
+
+  <div id="toast"></div>
+  <div id="fatal"><div class="panel center"><h2>Oops</h2><p></p><button class="big-btn">Back to start</button></div></div>
+
+  <script src="js/tables.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/controls.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
