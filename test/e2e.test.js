@@ -129,6 +129,13 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   await sleep(500);
   check('g1 sees table choice', await g1.evaluate(() => document.querySelector('#table-select .table-opt.sel').dataset.id === 'diamonds'));
 
+  // border damage: defaults to low, host switches to high, guests see it locked
+  check('border damage defaults to low', await g2.evaluate(() => document.querySelector('#dmg-select .sel').dataset.lvl === 'low'));
+  check('guests cannot change border damage', await g2.evaluate(() => document.querySelector('#dmg-select .sel').disabled));
+  await host.evaluate(() => document.querySelector('#dmg-select [data-lvl="high"]').click());
+  await g1.waitForFunction(() => document.querySelector('#dmg-select .sel').dataset.lvl === 'high', null, { timeout: 8000 });
+  check('border damage change reaches guests', true);
+
   for (const p of [g1, g2, host]) await p.click('#btn-ready');
   await host.waitForFunction(() => !document.getElementById('btn-start').disabled, null, { timeout: 8000 });
   await host.click('#btn-start');
@@ -141,6 +148,8 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   check('all agree on starter', new Set(starters).size === 1);
   check('bot ball carries its difficulty into the match',
     await host.evaluate(() => Game.match.balls.find(b => b.isBot).botLevel === 'hard'));
+  const dmgVals = await Promise.all(Object.values(pages).map(p => p.evaluate(() => Game.match.borderDmg)));
+  check('all devices resolved the same border damage', new Set(dmgVals).size === 1 && dmgVals[0] === 8);
 
   const state = (p) => p.evaluate(() => ({
     mode: Game.match.mode,

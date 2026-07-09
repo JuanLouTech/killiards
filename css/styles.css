@@ -343,6 +343,23 @@ input[type='text']:focus { border-color: var(--neon); }
   background: #04050a;
 }
 
+#dmg-select { display: flex; gap: 8px; }
+#dmg-select button {
+  flex: 1;
+  background: #070812;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+#dmg-select button.sel { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 12px rgba(65, 255, 90, 0.25); }
+#dmg-select button:disabled { cursor: default; opacity: 0.75; }
+#dmg-select button:disabled.sel { opacity: 1; }
+
 /* ---------- roulette ---------- */
 
 #roulette-grid {

@@ -281,6 +281,24 @@ function check(name, cond) {
     balls[1].mMul === PHYS.HEAVY_M && Math.abs(balls[1].vx + 1000 * PHYS.HEAVY_SPEED) < 0.01);
 }
 
+// Test 15: border damage setting — none deals nothing, low deals half
+{
+  const t = getTable('classic');
+  const shot = { dx: -1, dy: 0, speed: 1400, spin: { x: 0, y: 0 } };
+  const run = (borderDmg) => {
+    const balls = mkBalls([[800, 450]], 1);
+    const sim = new Sim(balls, t, 0, shot, { borderDmg });
+    let steps = 0;
+    while (!sim.step() && steps < 60 * 30) steps++;
+    return { hp: balls[0].hp, walls: sim.events.filter(e => e.type === 'wall').length };
+  };
+  const none = run(0), low = run(PHYS.BORDER_DMG / 2), high = run(PHYS.BORDER_DMG);
+  check('none: wall contacts cost nothing (events still fire)', none.hp === 100 && none.walls >= 1);
+  check('low: half damage per contact', Math.abs((100 - low.hp) - low.walls * PHYS.BORDER_DMG / 2) < 0.01);
+  check('high: full damage per contact', Math.abs((100 - high.hp) - high.walls * PHYS.BORDER_DMG) < 0.01);
+  check('default is full damage (constant unchanged)', run(undefined).hp === high.hp);
+}
+
 // Test 9: every spawn on every table is clear of obstacles and walls
 {
   for (const t of TABLES) {

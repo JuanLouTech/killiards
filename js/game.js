@@ -26,6 +26,9 @@ const Game = {
     }));
     this.match = {
       table, balls,
+      // host lobby setting, resolved to the absolute per-contact value every
+      // device will use when it simulates a turn
+      borderDmg: PHYS.BORDER_DMG * ({ none: 0, low: 0.5, high: 1 }[d.borderDmg] ?? 0.5),
       barriers: (table.barriers || []).map(([x, y]) => ({ x, y, vx: 0, vy: 0, isBar: true })),
       powerups: [],
       turnIdx: 0, turnCount: 1,
@@ -104,7 +107,7 @@ const Game = {
     const m = this.match;
     return BotAI.plan({
       balls: m.balls, table: m.table, barriers: m.barriers,
-      powerups: m.powerups, turnIdx: m.turnIdx,
+      powerups: m.powerups, turnIdx: m.turnIdx, borderDmg: m.borderDmg,
     }, level);
   },
 
@@ -120,6 +123,7 @@ const Game = {
       barriers: m.barriers,
       powerups: m.powerups,
       effect,
+      borderDmg: m.borderDmg,
       onEvent: (ev) => this.handleEvent(ev),
     });
     m.mode = 'live';

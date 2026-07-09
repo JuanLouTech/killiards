@@ -118,6 +118,15 @@ window.addEventListener('DOMContentLoaded', () => {
   // ---- bots (host adds them in the lobby) ----
   document.getElementById('btn-add-bot').addEventListener('click', () => UI.hostAddBot());
 
+  // ---- border damage (host lobby setting) ----
+  document.querySelectorAll('#dmg-select button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!Net.isHost || UI.inMatch) return;
+      UI.lobby.borderDmg = btn.dataset.lvl;
+      UI.hostBroadcastLobby();
+    });
+  });
+
   // ---- best play replay is skippable ----
   document.getElementById('bestplay-skip').addEventListener('click', () => Game.skipBestPlay());
 

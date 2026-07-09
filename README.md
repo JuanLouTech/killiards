@@ -73,7 +73,10 @@ Nothing is ever computed independently on two devices, so states can never diver
   behaves on its **first** contact. You get **60 seconds** per turn (the clock
   only ticks while your app is focused) — when it runs out, the shot fires itself.
 - Border contacts deal a fixed damage, but only on *new* contacts (each border
-  edge has an id; sliding along the same border doesn't stack damage).
+  edge has an id; sliding along the same border doesn't stack damage). The host
+  picks the amount in the lobby — **None / Low / High** (default Low, half of
+  High) — resolved once and shipped in the match-start payload so every
+  device simulates with the same value.
 - Ball-to-ball hits damage the victim proportionally to the speed change.
   The player currently shooting is immune to ball damage (but not border damage).
 - At 0 HP a ball explodes and leaves a grey **dead ball**: takes no damage, has

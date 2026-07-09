@@ -80,7 +80,8 @@ const BotAI = {
     me.storedPower = null;
     const speed = PHYS.MIN_SHOT + c.power * (PHYS.MAX_SHOT - PHYS.MIN_SHOT);
     const sim = new Sim(balls, state.table, state.turnIdx,
-      { dx: c.dx, dy: c.dy, speed, spin: c.spin }, { barriers, powerups, effect });
+      { dx: c.dx, dy: c.dy, speed, spin: c.spin },
+      { barriers, powerups, effect, borderDmg: state.borderDmg });
     let guard = 0;
     while (!sim.step() && guard++ < 60 * (PHYS.MAX_T + 1)) { /* run silently */ }
     return this.score(state, balls, powerups, cfg);

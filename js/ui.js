@@ -99,6 +99,7 @@ const UI = {
     this.lobby = {
       players: [{ id: Net.myId, ...this.profile, ready: false, isHost: true }],
       tableId: TABLES[0].id,
+      borderDmg: 'low', // none | low | high — low keeps matches from ending too fast
     };
     this.renderLobby();
     this.showScreen('lobby');
@@ -249,6 +250,12 @@ const UI = {
       d.classList.toggle('sel', d.dataset.id === this.lobby.tableId));
     tsel.classList.toggle('locked', !Net.isHost);
 
+    // border damage selector (host picks; guests see the choice)
+    document.querySelectorAll('#dmg-select button').forEach(btn => {
+      btn.classList.toggle('sel', btn.dataset.lvl === (this.lobby.borderDmg || 'low'));
+      btn.disabled = !Net.isHost;
+    });
+
     // buttons
     const me = this.lobby.players.find(p => p.id === Net.myId);
     const readyBtn = document.getElementById('btn-ready');
@@ -351,7 +358,7 @@ const UI = {
     const table = getTable(tableId);
     const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot, level: p.level }));
     const spawns = shuffle([...table.spawns]).slice(0, order.length);
-    const d = { tableId, order, spawns };
+    const d = { tableId, order, spawns, borderDmg: this.lobby.borderDmg || 'low' };
     Net.matchLocked = true;
     Net.broadcast({ t: 'start', d });
     this.handleStart(d);

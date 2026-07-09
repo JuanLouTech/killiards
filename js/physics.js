@@ -106,6 +106,9 @@ class Sim {
     this.shooterIdx = shooterIdx;
     this.spin = shot.spin && (shot.spin.x || shot.spin.y) ? { ...shot.spin } : null;
     this.spinApplied = false;
+    // border damage is a host lobby setting (none/low/high), resolved to an
+    // absolute value and shipped in the match-start payload
+    this.borderDmg = opts.borderDmg != null ? opts.borderDmg : PHYS.BORDER_DMG;
     this.frames = [];
     this.events = [];
     this.steps = 0;
@@ -176,6 +179,7 @@ class Sim {
 
   damage(idx, amount, kind, ev) {
     if (idx >= this.balls.length) return; // barriers have no hp
+    if (amount < 0.001) return;           // e.g. border damage set to None
     const b = this.balls[idx];
     if (b.dead) return;
     if (kind === 'ball' && idx === this.shooterIdx) return; // shooter immune to ball hits
@@ -225,7 +229,7 @@ class Sim {
     if (b.lastBorder === borderId) return; // same border: no new damage
     b.lastBorder = borderId;
     const ev = { f: this.recFrame(), type: 'wall', x: Math.round(x), y: Math.round(y), mag: Math.round(mag), victims: [] };
-    this.damage(idx, PHYS.BORDER_DMG, 'wall', ev);
+    this.damage(idx, this.borderDmg, 'wall', ev);
     this.emit(ev);
   }
 
