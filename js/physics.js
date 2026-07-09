@@ -48,15 +48,21 @@ const PHYS = {
   TINY_M: 0.3,   // very light: a tiny ball barely pushes anyone
 };
 
-// Power-up catalogue. Traps are picked up exactly like buffs — shoving an
-// enemy ball into one is the whole point.
+// Power-up catalogue. Traps are touched exactly like buffs — shoving an
+// enemy ball into one is the whole point. Three behaviors:
+//   store:   kept and fired on the toucher's next shot (blast/boost)
+//   instant: hp applied the moment the ball touches it (heal/poison)
+//   delayed: changes the toucher's ball for the whole NEXT turn, whoever
+//            shoots it, then wears off (tiny/heavy) — double-edged: a heavy
+//            ball is hard to shove around, a tiny one is hard to hit but
+//            flies far. Watch who plays next.
 const POWER_KINDS = {
-  blast:  { emoji: '💥', name: 'Blast shot',  trap: false, desc: 'your next shot explodes on first contact' },
-  boost:  { emoji: '⚡', name: 'Power boost', trap: false, desc: 'your next shot is much stronger' },
-  heal:   { emoji: '💚', name: 'Repair',      trap: false, desc: `+${PHYS.HEAL_HP} energy on your next turn` },
-  poison: { emoji: '☠️', name: 'Poison',      trap: true,  desc: `-${PHYS.POISON_HP} energy on your next turn` },
-  tiny:   { emoji: '🐜', name: 'Tiny ball',   trap: true,  desc: 'your ball is small and light next turn' },
-  heavy:  { emoji: '🪨', name: 'Heavy ball',  trap: true,  desc: 'your next shot is slow and sluggish' },
+  blast:  { emoji: '💥', name: 'Blast shot',  trap: false, store: true, desc: 'your next shot explodes on first contact' },
+  boost:  { emoji: '⚡', name: 'Power boost', trap: false, store: true, desc: 'your next shot is much stronger' },
+  heal:   { emoji: '💚', name: 'Repair',      trap: false, instant: true, desc: `+${PHYS.HEAL_HP} energy on the spot` },
+  poison: { emoji: '☠️', name: 'Poison',      trap: true,  instant: true, desc: `-${PHYS.POISON_HP} energy on the spot` },
+  tiny:   { emoji: '🐜', name: 'Tiny ball',   trap: true,  delayed: true, desc: 'the ball is tiny & light for the whole next turn' },
+  heavy:  { emoji: '🪨', name: 'Heavy ball',  trap: true,  delayed: true, desc: 'the ball is heavy & sluggish for the whole next turn' },
 };
 const POWER_KIND_IDS = Object.keys(POWER_KINDS);
 
@@ -119,19 +125,22 @@ class Sim {
             Math.hypot(b.x - t.b[0], b.y - t.b[1]) < PHYS.TELE_R) b.teleLock = ti;
       });
     }
-    for (const b of balls) { b.rMul = null; b.mMul = null; }
+    // delayed effects (tiny/heavy picked up last turn) are active for this
+    // whole turn on whichever balls carry them, shooter or not
+    for (const b of balls) {
+      b.rMul = null; b.mMul = null;
+      if (b.fxNow === 'tiny') { b.rMul = PHYS.TINY_R; b.mMul = PHYS.TINY_M; }
+      else if (b.fxNow === 'heavy') { b.mMul = PHYS.HEAVY_M; }
+    }
 
-    // stored power-up consumed by this shot (buff or trap, applied the same way)
+    // stored power-up consumed by this shot (blast/boost only)
     this.effect = opts.effect || null;
     this.blastArmed = false;
     const s = balls[shooterIdx];
     let speedMul = 1;
     if (this.effect === 'blast') this.blastArmed = true;
     else if (this.effect === 'boost') speedMul = PHYS.BOOST_MULT;
-    else if (this.effect === 'heavy') { speedMul = PHYS.HEAVY_SPEED; s.mMul = PHYS.HEAVY_M; }
-    else if (this.effect === 'tiny') { s.rMul = PHYS.TINY_R; s.mMul = PHYS.TINY_M; }
-    else if (this.effect === 'heal') s.hp = Math.min(PHYS.MAX_HP, s.hp + PHYS.HEAL_HP);
-    else if (this.effect === 'poison') s.hp = Math.max(1, s.hp - PHYS.POISON_HP);
+    if (s.fxNow === 'heavy') speedMul *= PHYS.HEAVY_SPEED; // sluggish shot too
     if (this.effect) {
       this.emit({ f: 0, type: 'fx', kind: this.effect, i: shooterIdx,
         x: Math.round(s.x), y: Math.round(s.y), mag: 0, victims: [] });
@@ -352,9 +361,23 @@ class Sim {
         const u = this.pu[p];
         if (Math.hypot(b.x - u.x, b.y - u.y) < PHYS.PU_R + this.bodyR(b)) {
           this.pu.splice(p, 1);
-          b.storedPower = u.k; // whoever's ball touches it keeps it — traps included
-          this.emit({ f: this.recFrame(), type: 'pu', x: u.x, y: u.y,
-            id: u.id, k: u.k, i, mag: 0, victims: [] });
+          const ev = { f: this.recFrame(), type: 'pu', x: u.x, y: u.y,
+            id: u.id, k: u.k, i, mag: 0, victims: [] };
+          const kind = POWER_KINDS[u.k];
+          if (u.k === 'heal') {
+            const gain = Math.min(PHYS.MAX_HP, b.hp + PHYS.HEAL_HP) - b.hp;
+            b.hp += gain;
+            if (gain > 0.05) ev.victims.push({ i, dmg: -Math.round(gain * 10) / 10 });
+          } else if (u.k === 'poison') {
+            const dmg = b.hp - Math.max(1, b.hp - PHYS.POISON_HP); // can't kill by itself
+            b.hp -= dmg;
+            ev.victims.push({ i, dmg: Math.round(dmg * 10) / 10 });
+          } else if (kind.delayed) {
+            b.fxNext = u.k; // hits during the NEXT turn, whoever plays it
+          } else {
+            b.storedPower = u.k; // blast/boost: fires on this player's next shot
+          }
+          this.emit(ev);
         }
       }
     }

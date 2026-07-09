@@ -22,6 +22,7 @@ const Game = {
       x: d.spawns[i][0], y: d.spawns[i][1], vx: 0, vy: 0,
       hp: PHYS.MAX_HP, hpShow: PHYS.MAX_HP, dead: false, deathTurn: null,
       lastBorder: null, storedPower: null, rMul: null, mMul: null,
+      fxNow: null, fxNext: null, // delayed effects: active this turn / scheduled for next
     }));
     this.match = {
       table, balls,
@@ -56,7 +57,14 @@ const Game = {
     const cur = this.currentBall();
     const mine = cur.id === Net.myId;
     if (mine) SFX.turnStart();
-    const icon = cur.storedPower ? ` ${POWER_KINDS[cur.storedPower].emoji}` : '';
+    // a tiny/heavy picked up last turn strikes now — warn its owner
+    const meB = m.balls[this.myBallIdx()];
+    if (meB && !meB.dead && meB.fxNow) {
+      const k = POWER_KINDS[meB.fxNow];
+      UI.toast(`${k.emoji} ${k.name} strikes: your ball is ${meB.fxNow === 'tiny' ? 'tiny & light' : 'heavy & sluggish'} this turn!`);
+    }
+    let icon = cur.storedPower ? ` ${POWER_KINDS[cur.storedPower].emoji}` : '';
+    if (cur.fxNow) icon += ` ${POWER_KINDS[cur.fxNow].emoji}`;
     Controls.setTurn({
       active: mine,
       color: cur.color,
@@ -137,12 +145,14 @@ const Game = {
       tc: m.turnCount,
       sh: m.turnIdx,
       fx: m.activeFx,
+      act: m.balls.map(b => b.fxNow || null),   // effects active during this turn (replay visuals)
       frames: m.sim.frames,
       events: m.sim.events,
       final: {
         p: m.balls.map(b => [Math.round(b.x), Math.round(b.y)]),
         hp: m.balls.map(b => Math.round(b.hp * 10) / 10),
         sp: m.balls.map(b => b.storedPower || null),
+        eff: m.balls.map(b => b.fxNext || null), // tiny/heavy scheduled for the next turn
         bar: m.barriers.map(b => [Math.round(b.x), Math.round(b.y)]),
         pu: m.powerups.concat(spawn ? [spawn] : []),
       },
@@ -207,7 +217,7 @@ const Game = {
     m.waitingSimTc = null; // the wait is over: we're about to see the motion
     this.scoreBestPlay(d);
     // effect visuals during the replay (positions come from the frames)
-    if (d.fx === 'tiny') m.balls[d.sh].rMul = PHYS.TINY_R;
+    if (d.act) m.balls.forEach((b, i) => { b.rMul = d.act[i] === 'tiny' ? PHYS.TINY_R : null; });
     m.replay = { frames: d.frames, events: d.events, evIdx: 0, f: 0, final: d.final };
     m.mode = 'replay';
     SFX.shoot(0.7);
@@ -264,11 +274,11 @@ const Game = {
       Renderer.spawnSparks(ev.x, ev.y, 12, '#41ff5a', 260);
     } else if (ev.type === 'pu') {
       const kind = POWER_KINDS[ev.k];
-      SFX.powerup();
+      if (kind.trap) SFX.trap(); else SFX.powerup();
       Renderer.spawnSparks(ev.x, ev.y, 18, kind.trap ? '#c86bff' : '#ffd84d', 320);
       m.powerups = m.powerups.filter(u => u.id !== ev.id); // no-op on the live device
       const b = m.balls[ev.i];
-      if (b) b.storedPower = ev.k;
+      if (b && kind.store) b.storedPower = ev.k; // instant/delayed effects ride the payload instead
       if (ev.i === myIdx) {
         UI.toast(`${kind.trap ? 'Uh-oh… you caught' : 'You got'} ${kind.emoji} ${kind.name}: ${kind.desc}`);
       }
@@ -280,18 +290,9 @@ const Game = {
       SFX.explode();
       Renderer.spawnExplosion(ev.x, ev.y, '#ff9d3b');
     } else if (ev.type === 'fx') {
-      const b = m.balls[ev.i];
-      if (ev.kind === 'poison') {
-        SFX.trap();
-        if (b) Renderer.spawnSparks(b.x, b.y, 20, '#a1ff4d', 240);
-        if (ev.i === myIdx) UI.toast('☠️ Poison bites: -' + PHYS.POISON_HP + ' energy');
-      } else if (ev.kind === 'heal') {
-        SFX.powerup();
-        if (b) Renderer.spawnSparks(b.x, b.y, 20, '#41ff5a', 240);
-      } else if (ev.kind === 'tiny' || ev.kind === 'heavy') {
-        SFX.trap();
-        if (ev.i === myIdx) UI.toast(POWER_KINDS[ev.kind].emoji + ' ' + POWER_KINDS[ev.kind].name + ' strikes this turn!');
-      }
+      // blast/boost consumed at shot time — no visuals of their own
+      // (legacy heal/poison/tiny/heavy fx events no longer occur: heal/poison
+      // apply at pickup, tiny/heavy ride the payload as next-turn effects)
       return; // no shake for effect banners
     }
     const mine = (ev.victims || []).find(v => v.i === myIdx);
@@ -314,6 +315,15 @@ const Game = {
       // sits still until the recording arrives, so say why
       text = 'SIMULATING…';
       cls = 'simulating';
+    }
+    // who plays after this turn — tiny/heavy pickups land on that turn, so
+    // knowing the order is part of the strategy
+    if (m && m.mode === 'idle' && m.balls.filter(b => !b.dead).length > 1) {
+      let idx = m.turnIdx;
+      do { idx = (idx + 1) % m.balls.length; } while (m.balls[idx].dead);
+      const nb = m.balls[idx];
+      const next = `Next: ${nb.emoji}${nb.name ? ' ' + nb.name : ''}`;
+      text = text ? `${text}  ·  ${next}` : next;
     }
     if (text !== this._subText || cls !== this._subCls) {
       this._subText = text;
@@ -342,8 +352,13 @@ const Game = {
       b.y = final.p[i][1];
       b.vx = 0; b.vy = 0;
       b.hp = final.hp[i];
-      b.rMul = null; b.mMul = null;
       if (final.sp) b.storedPower = final.sp[i];
+      // effects scheduled during this turn become active for the next one;
+      // whatever was active this turn wears off here
+      b.fxNow = final.eff ? final.eff[i] : null;
+      b.fxNext = null;
+      b.rMul = b.fxNow === 'tiny' ? PHYS.TINY_R : null;
+      b.mMul = null;
     });
     if (final.bar) {
       m.barriers.forEach((br, i) => {
@@ -430,7 +445,7 @@ const Game = {
       this.bestPlay = {
         score: Math.round(score),
         frames: payload.frames, events: payload.events,
-        sh: payload.sh, fx: payload.fx, tc: payload.tc,
+        sh: payload.sh, act: payload.act, tc: payload.tc,
         deadMask: m.balls.map(b => b.dead),
       };
     }
@@ -446,7 +461,7 @@ const Game = {
     this._savedEnd = m.balls.map(b => ({ dead: b.dead, x: b.x, y: b.y }));
     m.balls.forEach((b, i) => {
       b.dead = bp.deadMask[i];
-      b.rMul = (bp.fx === 'tiny' && i === bp.sh) ? PHYS.TINY_R : null;
+      b.rMul = (bp.act && bp.act[i] === 'tiny') ? PHYS.TINY_R : null;
     });
     m.replay = { frames: bp.frames, events: bp.events, evIdx: 0, f: 0, final: null, bestplay: true };
     m.mode = 'bestplay';

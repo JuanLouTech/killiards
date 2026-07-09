@@ -168,32 +168,32 @@ function check(name, cond) {
   check('shooter got nothing', !balls[0].storedPower);
 }
 
-// Test 13: effects — boost travels farther, tiny shrinks, heal/poison move hp
+// Test 13: effects — boost (stored) travels farther, heavy/tiny (active
+// next-turn effects, set via fxNow) change mass, size and shot speed
 {
   const t = getTable('classic');
-  const run = (effect) => {
+  const run = (effect, fxNow) => {
     const balls = mkBalls([[300, 450], [1400, 800]], 2);
+    if (fxNow) balls[0].fxNow = fxNow;
     // slow shot: nobody reaches the far wall, so distances compare cleanly
     const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 500, spin: { x: 0, y: 0 } }, { effect });
     let steps = 0;
     while (!sim.step() && steps < 60 * 30) steps++;
     return { balls, sim };
   };
-  const plain = run(null), boost = run('boost'), heavy = run('heavy');
+  const plain = run(null), boost = run('boost'), heavy = run(null, 'heavy');
   check('boost travels farther than plain', boost.balls[0].x > plain.balls[0].x + 50);
   check('heavy travels shorter than plain', heavy.balls[0].x < plain.balls[0].x - 50);
-  const tiny = run('tiny');
-  check('tiny shrinks the shooter', tiny.balls[0].rMul === PHYS.TINY_R);
-  const heal = run('heal'), poison = run('poison');
-  check('heal adds energy', heal.balls[0].hp > poison.balls[0].hp);
-  check('poison drains energy', poison.balls[0].hp <= 100 - PHYS.POISON_HP + PHYS.BORDER_DMG * 3);
+  const tiny = run(null, 'tiny');
+  check('tiny shrinks the affected ball', tiny.balls[0].rMul === PHYS.TINY_R);
   check('effect event recorded for replays', boost.sim.events.some(e => e.type === 'fx' && e.kind === 'boost'));
 
   // tiny is light: a head-on hit barely moves (and barely damages) the victim
-  const headOn = (effect) => {
+  const headOn = (fxNow) => {
     // moderate speed: the victim never reaches a wall, so displacement compares cleanly
     const balls = mkBalls([[400, 450], [800, 450]], 2);
-    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, { effect });
+    if (fxNow) balls[0].fxNow = fxNow;
+    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, {});
     let steps = 0;
     while (!sim.step() && steps < 60 * 30) steps++;
     return balls[1];
@@ -235,6 +235,50 @@ function check(name, cond) {
     const drift = (balls[0].y - 450) * want;
     check(`spin.x=${sx} deflects to the ${sx > 0 ? 'right' : 'left'} of aim`, drift > 30);
   }
+}
+
+// Test 11: heal/poison apply the instant a ball touches them
+{
+  const t = getTable('classic');
+  {
+    const balls = mkBalls([[400, 450]], 1);
+    balls[0].hp = 50;
+    const pu = [{ id: 'u1', k: 'heal', x: 700, y: 450, born: 0 }];
+    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, { powerups: pu });
+    let n = 0; while (!sim.step() && n++ < 3600) { /* run */ }
+    check('heal applies instantly, nothing stored', Math.abs(balls[0].hp - (50 + PHYS.HEAL_HP)) < 0.01 && !balls[0].storedPower);
+    check('heal emits a negative-damage victim (green floater)', sim.events.some(e => e.type === 'pu' && e.victims.some(v => v.dmg < 0)));
+    check('heal removed from the table', pu.length === 0);
+  }
+  {
+    const balls = mkBalls([[400, 450]], 1);
+    balls[0].hp = 10;
+    const pu = [{ id: 'u2', k: 'poison', x: 700, y: 450, born: 0 }];
+    const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, { powerups: pu });
+    let n = 0; while (!sim.step() && n++ < 3600) { /* run */ }
+    check('poison bites instantly but cannot kill by itself', balls[0].hp === 1 && !balls[0].storedPower);
+    check('poison emits a positive-damage victim', sim.events.some(e => e.type === 'pu' && e.victims.some(v => v.dmg > 0)));
+  }
+}
+
+// Test 12: tiny/heavy schedule for the NEXT turn and are active during it
+{
+  const t = getTable('classic');
+  const balls = mkBalls([[400, 450], [1200, 750]], 2);
+  const pu = [{ id: 'u3', k: 'tiny', x: 700, y: 450, born: 0 }];
+  const sim = new Sim(balls, t, 0, { dx: 1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, { powerups: pu });
+  let n = 0; while (!sim.step() && n++ < 3600) { /* run */ }
+  check('tiny schedules for next turn, nothing stored', balls[0].fxNext === 'tiny' && !balls[0].storedPower);
+  check('tiny NOT active during the pickup turn', balls[0].rMul === null);
+  // the hand-off every device performs at end of turn (runEndSequence)
+  balls.forEach(b => { b.fxNow = b.fxNext || null; b.fxNext = null; });
+  new Sim(balls, t, 1, { dx: -1, dy: 0, speed: 600, spin: { x: 0, y: 0 } }, {});
+  check('tiny active next turn even when another player shoots',
+    balls[0].rMul === PHYS.TINY_R && balls[0].mMul === PHYS.TINY_M);
+  balls[1].fxNow = 'heavy';
+  new Sim(balls, t, 1, { dx: -1, dy: 0, speed: 1000, spin: { x: 0, y: 0 } }, {});
+  check('heavy ball is massive and its own shot is slowed',
+    balls[1].mMul === PHYS.HEAVY_M && Math.abs(balls[1].vx + 1000 * PHYS.HEAVY_SPEED) < 0.01);
 }
 
 // Test 9: every spawn on every table is clear of obstacles and walls

@@ -365,6 +365,14 @@ const Renderer = {
       ctx.strokeStyle = b.isBot ? '#ffd84d' : 'rgba(255,255,255,0.75)';
       ctx.lineWidth = b.isBot ? 3.5 : 2.5;
       ctx.stroke();
+      // heavy this turn: a thick stone-grey outer ring (tiny shows by size)
+      if (b.fxNow === 'heavy') {
+        ctx.strokeStyle = 'rgba(165,172,185,0.9)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, R + 7, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.font = `${R * 1.25}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';

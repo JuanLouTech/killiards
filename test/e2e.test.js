@@ -240,18 +240,31 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   }
 
   // simulate g1 disconnect mid-match (shim can't detect page close, so close
-  // the connection explicitly — real PeerJS fires 'close' on ICE drop too)
+  // the connection explicitly). Kills may already have happened — a HARD bot
+  // finishes weakened players — so compare against counts taken once the
+  // table is quiet with no bot turn pending.
+  for (let i = 0; i < 3; i++) {
+    const isBot = await host.evaluate(() => Game.match.mode !== 'over' && Game.currentBall().isBot);
+    if (!isBot) break;
+    await settle(await host.evaluate(() => Game.match.turnCount));
+  }
+  await host.waitForFunction(() => Game.match.mode === 'idle' || Game.match.mode === 'over', null, { timeout: 30000 });
+  const g1Id = await g1.evaluate(() => Net.myId);
+  const deadBefore = await host.evaluate(() => Game.match.balls.filter(b => b.dead).length);
+  const g1DeadAlready = await host.evaluate((id) => Game.match.balls.find(b => b.id === id).dead, g1Id);
+  const wasOver = await host.evaluate(() => Game.match.mode === 'over');
   await g1.evaluate(() => Net.server.close());
   await g1.close();
   await sleep(1500);
+  const expected = deadBefore + (!wasOver && !g1DeadAlready ? 1 : 0);
   const deadOnHost = await host.evaluate(() => Game.match.balls.filter(b => b.dead).length);
   const deadOnG2 = await g2.evaluate(() => Game.match.balls.filter(b => b.dead).length);
-  check('disconnect kills ball everywhere', deadOnHost === 1 && deadOnG2 === 1);
-  // 4 players (incl. the bot), one disconnected -> 3 still alive
+  check('disconnect kills ball everywhere', deadOnHost === expected && deadOnG2 === expected);
   const aliveHost = await host.evaluate(() => Game.match.balls.filter(b => !b.dead).length);
-  check('three players remain alive', aliveHost === 3);
+  check('remaining players still alive', aliveHost === 4 - expected);
+  const overNow = await host.evaluate(() => Game.match.mode === 'over');
   const curH = await host.evaluate(() => Game.currentBall().dead);
-  check('current turn holder is alive', curH === false);
+  check('current turn holder is alive', overNow || curH === false);
 
   // ranking screen renders (nameless bot shown by its emoji)
   await host.evaluate(() => UI.showRanking(Game.ranking()));

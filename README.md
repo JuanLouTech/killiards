@@ -48,6 +48,10 @@ Nothing is ever computed independently on two devices, so states can never diver
   is only taken when the player sends their profile.
 - **Power-up spawns are rolled once**, by the device that just finished a turn,
   and shipped inside that turn's payload — no separate spawn message, no race.
+- **Delayed effects ride the payload too**: a tiny/heavy pickup ships as
+  `final.eff` (per-ball, active next turn) and each turn's active effects ship
+  as `act` (for replay visuals), so every device applies and expires them at
+  the same turn boundaries.
 - **Turn recordings queue.** A recording can arrive while a device is still
   replaying the previous turn (bot turns make this common: the host plays on
   without waiting for anyone's replay). Applying it immediately would clobber
@@ -75,10 +79,14 @@ Nothing is ever computed independently on two devices, so states can never diver
 - At 0 HP a ball explodes and leaves a grey **dead ball**: takes no damage, has
   extra drag, and can be pushed into living players as a weapon.
 - **Power-ups** appear on the table once in a while (max 3, gone after 4 turns).
-  Whichever ball touches one stores it for *that player's* next shot — including
-  balls you shove into them. Buffs: 💥 blast (first contact explodes), ⚡ boost
-  (stronger shot), 💚 repair. Traps: ☠️ poison, 🐜 tiny ball, 🪨 heavy ball.
-  Identity is visible: dodge the traps, or push enemies into them.
+  Whichever ball touches one takes it — including balls you shove into them.
+  Three behaviors: 💥 blast and ⚡ boost are **stored** and fire on that
+  player's next shot; 💚 repair and ☠️ poison apply **instantly** on touch
+  (poison can't kill by itself); 🐜 tiny and 🪨 heavy change the touching ball
+  for the **whole next turn**, whoever plays it, then wear off. Tiny/heavy are
+  double-edged (a heavy ball is hard to shove, a tiny one is a small target but
+  flies far), so the *Next:* indicator under the turn banner is part of the
+  strategy: shove an enemy over one right before their turn.
 - Some tables have **teleporters** (paired rings that preserve velocity, with a
   re-entry lock) and **pushable barriers** (heavy glowing squares you can launch
   at people). They're simulated in the same recording, so replays stay exact.

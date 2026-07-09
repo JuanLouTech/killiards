@@ -93,16 +93,15 @@ const BotAI = {
     let s = 0;
     after.forEach((b, i) => {
       if (i === idx || before[i].dead) return;
-      s += Math.max(0, before[i].hp - b.hp);                    // damage dealt
-      if (b.hp <= 0) s += cfg.killBonus;                        // kill secured
-      if (b.storedPower && !before[i].storedPower &&
-          !POWER_KINDS[b.storedPower].trap) s -= 10;            // fed a foe a buff
+      s += before[i].hp - b.hp;                   // damage dealt (foe heals count against)
+      if (b.hp <= 0) s += cfg.killBonus;          // kill secured
+      if (b.storedPower && !before[i].storedPower) s -= 10; // fed a foe a buff
+      if (b.fxNext && !before[i].fxNext) s += 6;  // handicapped a foe's next turn
     });
-    s -= Math.max(0, before[idx].hp - me.hp) * cfg.selfW;       // self harm
-    if (me.hp <= 0) s -= 500;                                   // never suicide
-    if (me.storedPower) {
-      s += POWER_KINDS[me.storedPower].trap ? -(10 + cfg.trapAvoid) : 22;
-    }
+    s -= (before[idx].hp - me.hp) * cfg.selfW;    // self harm (self heals reward)
+    if (me.hp <= 0) s -= 500;                     // never suicide
+    if (me.storedPower) s += 22;                  // banked a blast/boost
+    if (me.fxNext) s -= cfg.trapAvoid;            // our ball is handicapped next turn
     if (cfg.position) {
       // resting against a border or next to a trap is asking to be punished
       const wall = Math.min(me.x, me.y, TABLE_W - me.x, TABLE_H - me.y);

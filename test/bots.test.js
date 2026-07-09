@@ -43,7 +43,10 @@ function playMatch(levels, tableId) {
       { dx: plan.dx, dy: plan.dy, speed, spin: plan.spin },
       { barriers: m.barriers, powerups: m.powerups, effect });
     while (!sim.step()) { /* run to rest */ }
-    m.balls.forEach(b => { if (!b.dead && b.hp <= 0) b.dead = true; });
+    m.balls.forEach(b => {
+      if (!b.dead && b.hp <= 0) b.dead = true;
+      b.fxNow = b.fxNext || null; b.fxNext = null; // end-of-turn effect hand-off
+    });
     const alive = m.balls.filter(b => !b.dead);
     if (alive.length === 0) return -1;
     if (alive.length === 1) return m.balls.indexOf(alive[0]);
