@@ -202,6 +202,65 @@ input[type='text']:focus { border-color: var(--neon); }
 
 .hint { color: var(--dim); font-size: 12px; text-align: center; margin-top: 14px; }
 
+/* ---------- invite links (?room=CODE) ----------
+   The home screen doubles as the invite landing page: the .invited class
+   hides the create/join controls and shows the room preview instead. */
+
+#invite-box, #btn-join-invite, #invite-escape { display: none; }
+#screen-home.invited .code-box,
+#screen-home.invited #btn-create,
+#screen-home.invited .join-row { display: none; }
+#screen-home.invited #btn-join-invite { display: block; }
+#screen-home.invited #invite-box {
+  display: block;
+  text-align: center;
+  background: #070812;
+  border: 1px solid rgba(62, 198, 255, 0.5);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 0 14px rgba(62, 198, 255, 0.1) inset;
+}
+.invite-title { font-size: 14px; font-weight: 700; }
+.invite-title .inline-code { font-size: 20px; letter-spacing: 3px; color: var(--accent2); }
+#invite-players { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+.invite-player {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #0d0f1a;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px 4px 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.invite-player .p-ball { width: 30px; height: 30px; font-size: 15px; }
+.invite-player i {
+  font-style: normal;
+  font-size: 8px;
+  color: var(--accent2);
+  border: 1px solid var(--accent2);
+  border-radius: 5px;
+  padding: 1px 4px;
+  margin-left: 5px;
+  vertical-align: 1px;
+}
+#invite-box .hint { margin-top: 10px; }
+#invite-retry { margin-top: 10px; display: none; }
+#screen-home.invited #invite-escape {
+  display: block;
+  margin: 14px auto 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 12px;
+  text-decoration: underline;
+}
+#screen-home.invited #invite-escape:active { color: var(--text); }
+
+.mini.share { color: var(--accent2); border-color: rgba(62, 198, 255, 0.4); margin-left: 6px; vertical-align: 5px; }
+
 /* ---------- lobby ---------- */
 
 #lobby-players { display: flex; flex-direction: column; gap: 8px; }

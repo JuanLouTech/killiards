@@ -11,10 +11,21 @@ window.addEventListener('DOMContentLoaded', () => {
   // a room is full when all 6 seats are taken, bots included
   Net.seatsFull = () => UI.lobby.players.length >= 6;
 
+  // opened through an invite link (?room=CODE): show the invite variant of
+  // the home screen right away, connect to the room once the relay is up
+  const inviteRoom = (new URLSearchParams(location.search).get('room') || '').trim().toUpperCase();
+  if (inviteRoom) UI.showInviteHome(inviteRoom);
+
   // ---- peer bootstrap ----
   Net.start(
-    (id) => { document.getElementById('my-code').textContent = id; },
-    () => UI.toast('Network error — check your connection'),
+    (id) => {
+      document.getElementById('my-code').textContent = id;
+      if (UI.peeking) UI.startInvitePeek();
+    },
+    () => {
+      UI.toast('Network error — check your connection');
+      if (UI.peeking) UI.setInviteStatus('⚠️ No connection to the relay — check your internet', true);
+    },
   );
 
   // ---- host-side messages ----
@@ -33,17 +44,36 @@ window.addEventListener('DOMContentLoaded', () => {
       UI.hostCreateLobby();
     }
   });
-  Net.on('_busy', () => UI.toast('That room is full or already playing'));
+  // an invited player asks for the roster before taking a seat
+  Net.on('peek', (_d, from) => {
+    if (Net.isHost) Net.toGuest(from, { t: 'lobby', d: UI.lobby });
+  });
+  Net.on('_busy', () => {
+    if (UI.peeking) { UI.setInviteStatus('⚠️ That room is full or already playing.', true); return; }
+    UI.toast('That room is full or already playing');
+  });
   Net.on('_left', (_d, from) => {
     if (Net.isHost) UI.hostRemovePlayer(from);
   });
 
-  // ---- guest-side messages ----
-  Net.on('lobby', (d) => UI.guestApplyLobby(d));
-  Net.on('start', (d) => UI.handleStart(d));
+  // ---- guest-side messages (peekers get roster updates but stay put) ----
+  Net.on('lobby', (d) => UI.peeking ? UI.applyPeekLobby(d) : UI.guestApplyLobby(d));
+  Net.on('start', (d) => {
+    if (UI.peeking) {
+      UI.setInviteStatus('A match just started — you can join when it ends.');
+      document.getElementById('btn-join-invite').disabled = true;
+      return;
+    }
+    UI.handleStart(d);
+  });
   Net.on('left', (d) => Game.playerLeft(d.id));
-  Net.on('lobbyBack', () => UI.backToLobby());
+  Net.on('lobbyBack', () => { if (!UI.peeking) UI.backToLobby(); });
   Net.on('_hostLost', () => {
+    if (UI.peeking) {
+      // a busy/full rejection also closes the channel: keep the specific message
+      if (!UI.peekFailed) UI.setInviteStatus('⚠️ The host went offline.', true);
+      return;
+    }
     if (document.getElementById('screen-home').classList.contains('active')) return;
     UI.fatal('Connection to the host was lost.');
   });
@@ -133,6 +163,14 @@ window.addEventListener('DOMContentLoaded', () => {
       });
   });
 
+  // ---- invite landing buttons ----
+  document.getElementById('btn-join-invite').addEventListener('click', () => {
+    goFullscreen();
+    UI.inviteJoin();
+  });
+  document.getElementById('invite-retry').addEventListener('click', () => UI.startInvitePeek());
+  document.getElementById('invite-escape').addEventListener('click', () => UI.inviteEscape());
+
   // ---- lobby / ranking buttons ----
   // full reload is the cleanest way to tear down the peer + lobby state;
   // the host side sees the connection close and removes us
@@ -140,6 +178,18 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lobby-copy').addEventListener('click', () => {
     const code = document.getElementById('lobby-code').textContent;
     navigator.clipboard.writeText(code).then(() => UI.toast('Code copied!'));
+  });
+  // invite link: native share sheet on touch devices (WhatsApp/Telegram/…),
+  // clipboard + toast everywhere else
+  document.getElementById('lobby-share').addEventListener('click', () => {
+    const code = document.getElementById('lobby-code').textContent;
+    const url = location.origin + location.pathname + '?room=' + code;
+    if (navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+      navigator.share({ title: 'KILLIARDS', text: `Join my KILLIARDS room ${code}!`, url })
+        .catch(() => { /* user dismissed the sheet */ });
+    } else {
+      navigator.clipboard.writeText(url).then(() => UI.toast('Invite link copied — send it to your friends!'));
+    }
   });
   document.getElementById('btn-ready').addEventListener('click', () => { goFullscreen(); UI.toggleReady(); });
   document.getElementById('btn-start').addEventListener('click', () => { goFullscreen(); UI.hostStartMatch(); });

@@ -12,7 +12,8 @@ const EXE = process.env.HOME + '/Library/Caches/ms-playwright/chromium-1208/chro
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const server = http.createServer((req, res) => {
-  const p = path.join(ROOT, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+  const url = req.url.split('?')[0];
+  const p = path.join(ROOT, url === '/' ? 'index.html' : url);
   fs.readFile(p, (err, data) => {
     if (err) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'text/plain' });
@@ -60,32 +61,44 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   // keep the test hermetic: no real relay brokers
   await context.route('**/mqtt*', route => route.fulfill({ contentType: 'text/javascript', body: '/* shimmed */' }));
   const errors = [];
-  const mkPage = async (tag) => {
+  const mkPage = async (tag, path = '/') => {
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(tag + ': ' + String(e).slice(0, 200)));
     page.on('console', m => { if (m.type() === 'error') errors.push(tag + ' console: ' + m.text().slice(0, 200)); });
-    await page.goto('http://localhost:8125/');
+    await page.goto('http://localhost:8125' + path);
     return page;
   };
 
   const host = await mkPage('host');
-  const g1 = await mkPage('g1');
   const g2 = await mkPage('g2');
-  const pages = { host, g1, g2 };
-
-  for (const p of Object.values(pages))
+  for (const p of [host, g2])
     await p.waitForFunction(() => document.getElementById('my-code').textContent.length === 5);
   const code = await host.evaluate(() => document.getElementById('my-code').textContent);
 
   await host.fill('#name-input', 'Hosty');
   await host.click('#btn-create');
+  check('share button in lobby', await host.evaluate(() => document.getElementById('lobby-share').offsetParent !== null));
 
-  for (const [name, p] of [['Uno', g1], ['Dos', g2]]) {
-    await p.fill('#name-input', name);
-    await p.fill('#join-input', code);
-    await p.click('#btn-join');
-    await p.waitForFunction(() => document.getElementById('screen-lobby').classList.contains('active'), null, { timeout: 8000 });
-  }
+  // g1 arrives through a direct invite link: sees the lobby preview (room
+  // code + live roster) before taking a seat
+  const g1 = await mkPage('g1', '/?room=' + code);
+  const pages = { host, g1, g2 };
+  await g1.waitForFunction(() => document.getElementById('screen-home').classList.contains('invited'));
+  check('invite view shows the room code', await g1.evaluate((c) => document.getElementById('invite-code').textContent === c, code));
+  check('invite view hides the normal controls', await g1.evaluate(() => document.getElementById('btn-create').offsetParent === null));
+  await g1.waitForFunction(() => document.querySelectorAll('#invite-players .invite-player').length === 1, null, { timeout: 8000 });
+  check('invite roster previews the host', await g1.evaluate(() => document.querySelector('#invite-players .invite-player').textContent.includes('Hosty')));
+  await g1.fill('#name-input', 'Uno');
+  await g1.waitForFunction(() => !document.getElementById('btn-join-invite').disabled);
+  await g1.click('#btn-join-invite');
+  await g1.waitForFunction(() => document.getElementById('screen-lobby').classList.contains('active'), null, { timeout: 8000 });
+  check('invited player reaches the lobby', true);
+
+  // g2 joins the classic way, typing the code
+  await g2.fill('#name-input', 'Dos');
+  await g2.fill('#join-input', code);
+  await g2.click('#btn-join');
+  await g2.waitForFunction(() => document.getElementById('screen-lobby').classList.contains('active'), null, { timeout: 8000 });
   check('guests reach lobby', true);
   await host.waitForFunction(() => document.querySelectorAll('#lobby-players .player-card').length === 3, null, { timeout: 8000 });
   check('host sees 3 players', true);

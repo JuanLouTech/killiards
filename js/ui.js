@@ -111,6 +111,10 @@ const UI = {
 
   hostAddPlayer(id, prof) {
     if (this.lobby.players.some(p => p.id === id)) return;
+    // peekers (invite links) are connected before they take a seat, so the
+    // admission-time capacity check doesn't cover them — re-check here
+    if (this.inMatch) return;
+    if (this.lobby.players.length >= 6) { Net.toGuest(id, { t: 'busy' }); return; }
     this.lobby.players.push({ id, name: prof.name, emoji: prof.emoji, color: prof.color, ready: false, isHost: false });
     this.hostBroadcastLobby();
   },
@@ -239,7 +243,7 @@ const UI = {
     startBtn.disabled = !allReady;
     startBtn.textContent = this.lobby.players.length === 1 ? 'Start (solo test)' : 'Start match';
     document.getElementById('lobby-hint').textContent = Net.isHost
-      ? (allReady ? 'All set — start when you want!' : 'Share the code. Everyone must be ready.')
+      ? (allReady ? 'All set — start when you want!' : 'Share the invite link 🔗. Everyone must be ready.')
       : 'Waiting for the host to start…';
   },
 
@@ -249,6 +253,72 @@ const UI = {
       this.renderLobby();
       this.showScreen('lobby');
     }
+  },
+
+  // ---- invite links (?room=CODE): preview the lobby before joining ----
+
+  peeking: null,    // room code while previewing an invite
+  peekFailed: false,
+
+  // swap the home screen into its invite variant (runs before the relay is up)
+  showInviteHome(code) {
+    this.peeking = code;
+    document.getElementById('screen-home').classList.add('invited');
+    document.getElementById('invite-code').textContent = code;
+    this.setInviteStatus('Connecting to the room…');
+  },
+
+  // relay is up: connect to the host and ask for the current roster
+  startInvitePeek() {
+    const code = this.peeking;
+    if (!code) return;
+    this.setInviteStatus('Connecting to the room…');
+    Net.join(code,
+      () => Net.toHost({ t: 'peek' }),
+      (err) => this.setInviteStatus('⚠️ ' + err, true));
+  },
+
+  setInviteStatus(msg, failed) {
+    this.peekFailed = !!failed;
+    document.getElementById('invite-status').textContent = msg;
+    document.getElementById('invite-retry').style.display = failed ? 'inline-block' : 'none';
+    if (failed) document.getElementById('btn-join-invite').disabled = true;
+  },
+
+  // lobby snapshots arrive while peeking (the host broadcasts every change
+  // to all connections, seated or not): render the roster preview
+  applyPeekLobby(d) {
+    this.lobby = d;
+    const wrap = document.getElementById('invite-players');
+    wrap.innerHTML = '';
+    d.players.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'invite-player';
+      div.innerHTML = `<span class="p-ball${p.isBot ? ' bot' : ''}" style="background:${p.color}">${p.emoji}</span>
+        <span>${esc(dispName(p))}${p.isHost ? ' <i>HOST</i>' : ''}</span>`;
+      wrap.appendChild(div);
+    });
+    const seats = d.players.length;
+    const full = seats >= 6;
+    this.setInviteStatus(full
+      ? 'The room is full right now — waiting for a free seat…'
+      : `${seats} player${seats === 1 ? '' : 's'} in the room — pick your look and jump in!`);
+    document.getElementById('btn-join-invite').disabled = full;
+  },
+
+  inviteJoin() {
+    if (!this.peeking || !Net.server || !Net.server.open) return;
+    this.readProfile();
+    this.peeking = null;
+    document.getElementById('screen-home').classList.remove('invited');
+    Net.toHost({ t: 'profile', d: this.profile });
+  },
+
+  // "create your own room instead": back to the normal home screen
+  inviteEscape() {
+    this.peeking = null;
+    document.getElementById('screen-home').classList.remove('invited');
+    if (Net.server) Net.server.close();
   },
 
   // ---- match start / roulette ----

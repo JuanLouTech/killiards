@@ -337,6 +337,12 @@ const Net = {
     }
   },
 
+  // host → one specific guest
+  toGuest(id, msg) {
+    const c = this.conns.find(c => c.peer === id && c.open);
+    if (c) c.send(msg);
+  },
+
   // guest → host
   toHost(msg) {
     if (this.server && this.server.open) this.server.send(msg);

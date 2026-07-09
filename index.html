@@ -21,6 +21,14 @@
       <h1 class="logo">KILL<span>IARDS</span></h1>
       <p class="tagline">Turn-based billiard combat · online</p>
 
+      <!-- shown instead of the create/join controls when opened via ?room=CODE -->
+      <div id="invite-box">
+        <p class="invite-title">🎱 You're invited to room<code id="invite-code" class="inline-code"></code></p>
+        <div id="invite-players"></div>
+        <p id="invite-status" class="hint">Connecting…</p>
+        <button id="invite-retry" class="mini">Retry</button>
+      </div>
+
       <label class="lab">Name (optional)</label>
       <input id="name-input" type="text" maxlength="12" placeholder="Your name" autocomplete="off">
 
@@ -44,6 +52,9 @@
         <input id="join-input" type="text" maxlength="5" placeholder="CODE" autocomplete="off">
         <button id="btn-join" class="big-btn join">Join room</button>
       </div>
+
+      <button id="btn-join-invite" class="big-btn join" disabled>Join the room!</button>
+      <button id="invite-escape">or create your own room instead</button>
     </div>
   </div>
 
@@ -53,6 +64,7 @@
       <button id="btn-leave" class="mini leave" title="Leave room">← Back</button>
       <h2>Lobby <code id="lobby-code" class="inline-code"></code>
         <button id="lobby-copy" class="mini" title="Copy room code">⧉</button>
+        <button id="lobby-share" class="mini share" title="Share invite link">🔗 Invite</button>
       </h2>
       <div id="lobby-players"></div>
       <button id="btn-add-bot" class="mini add-bot">+ 🤖 Add bot</button>
