@@ -251,6 +251,11 @@ const Game = {
   handleEvent(ev) {
     const m = this.match;
     const myIdx = this.myBallIdx();
+    // damage/heal numbers float off every victim, live and in replays alike
+    for (const v of (ev.victims || [])) {
+      const vb = m.balls[v.i];
+      if (vb) Renderer.spawnDamage(vb.x, vb.y - PHYS.R * (vb.rMul || 1) - 8, v.dmg);
+    }
     if (ev.type === 'wall') {
       SFX.wall(ev.mag);
       Renderer.spawnSparks(ev.x, ev.y, 8, '#41ff5a', 260);
