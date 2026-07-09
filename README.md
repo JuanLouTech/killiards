@@ -10,6 +10,12 @@ WebSocket relay connects in ~1-2s on any network — and a turn-based game never
 notices the latency. The 5-letter room code is the host's locally generated id;
 up to **6 players** per room.
 
+Joining is one tap: the lobby's **🔗 Invite** button shares a direct link
+(`?room=CODE`) via the native share sheet on phones, or copies it to the
+clipboard elsewhere. Opening the link shows a live preview of the lobby
+(code + who's inside) with the usual name/emoji/color pickers and a single
+Join button.
+
 Connection diagnostics: tap the logo 3× (or add `?debug` to the URL) for a live
 connection log with a copy button.
 
@@ -30,6 +36,16 @@ Nothing is ever computed independently on two devices, so states can never diver
 - **Bot turns run on the host only.** Bots have no device, so the host simulates
   their shots exactly like its own; guests just receive a normal turn recording.
   Never simulate a bot anywhere else — two simulators means two histories.
+- **Bots plan by auditioning shots.** Because the physics are deterministic,
+  the planner (`js/botai.js`) silently runs candidate shots through the same
+  `Sim` on cloned state and picks the best outcome (damage, kills, self-harm,
+  power-ups, final position). Difficulty (EASY/MID/HARD, set per bot in the
+  lobby) is the number of candidates, the scoring weights, and how much
+  execution error is added after deciding. A full HARD plan takes ~20 ms.
+- **Invite links peek before joining.** The invited page connects like a normal
+  guest and asks for the roster (`peek`); since the host already broadcasts
+  lobby changes to every connection, the preview stays live for free. The seat
+  is only taken when the player sends their profile.
 - **Power-up spawns are rolled once**, by the device that just finished a turn,
   and shipped inside that turn's payload — no separate spawn message, no race.
 - **Turn recordings queue.** A recording can arrive while a device is still
@@ -66,7 +82,8 @@ Nothing is ever computed independently on two devices, so states can never diver
 - Some tables have **teleporters** (paired rings that preserve velocity, with a
   re-entry lock) and **pushable barriers** (heavy glowing squares you can launch
   at people). They're simulated in the same recording, so replays stay exact.
-- The host can add up to **3 bots** in the lobby (yellow ring); the host's device
+- The host can add up to **3 bots** in the lobby (yellow ring) and tap each
+  bot's chip to set its difficulty (**EASY / MID / HARD**); the host's device
   simulates their turns like normal shots, so guests just see turns arrive.
 - Names are optional: nameless players (and bots) show their **emoji** in the
   turn banner, roulette, lobby and ranking instead.
@@ -101,10 +118,13 @@ To play across the internet, deploy the folder to any static host
   teleporters, barriers, particles, floating emotes, shake
 - `js/controls.js` — slingshot pad + spin widget
 - `js/net.js` — relay transport over public MQTT brokers (host relays)
+- `js/botai.js` — bot shot planner (candidate simulation + scoring, difficulty
+  levels); pure physics, also runs headless in Node
 - `js/game.js` — turn conductor: live sim / replay / turn queue / power-up
   lifecycle / bot turns / shot clock / best play / ranking
-- `js/ui.js` — screens, lobby state (incl. bots), roulette, ranking
-- `js/main.js` — boot + message wiring (turn/shot/emote relays, emote bar)
+- `js/ui.js` — screens, lobby state (incl. bots + invite peek), roulette, ranking
+- `js/main.js` — boot + message wiring (turn/shot/emote relays, emote bar,
+  invite links)
 
 ## Contributing
 
@@ -122,9 +142,12 @@ whatever makes the game better. Two things to keep in mind:
 
 - `node test/physics.test.js` — headless simulation checks (damage rules,
   obstacles, spin, recording size/consistency). No dependencies.
+- `node test/bots.test.js` — headless bot-AI checks: shot sanity, planning
+  speed, and full bots-only matches asserting HARD beats EASY. No dependencies.
 - `node test/e2e.test.js` — full 3-player match in headless Chromium
-  (lobby → table select → roulette → turns → replay convergence → disconnect).
-  Hermetic: the MQTT layer is shimmed over BroadcastChannel. Needs
-  `npm i playwright-core` and a Playwright Chromium in the usual cache.
+  (invite link + lobby → bot levels → table select → roulette → turns → replay
+  convergence → disconnect). Hermetic: the MQTT layer is shimmed over
+  BroadcastChannel. Needs `npm i playwright-core` and a Playwright Chromium in
+  the usual cache.
 - `node test/relay.e2e.test.js` — live E2E: a 2-player match through the real
   public MQTT brokers. Needs internet.

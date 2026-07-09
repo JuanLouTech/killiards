@@ -18,6 +18,7 @@ const Game = {
     const table = getTable(d.tableId);
     const balls = d.order.map((p, i) => ({
       id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot,
+      botLevel: p.level || 'mid',
       x: d.spawns[i][0], y: d.spawns[i][1], vx: 0, vy: 0,
       hp: PHYS.MAX_HP, hpShow: PHYS.MAX_HP, dead: false, deathTurn: null,
       lastBorder: null, storedPower: null, rMul: null, mMul: null,
@@ -88,27 +89,15 @@ const Game = {
     const m = this.match;
     if (!m || m.mode !== 'idle' || m.turnCount !== tc) return;
     if (!this.currentBall().isBot || !Net.isHost) return;
-    this.performShot(this.botPlan());
+    this.performShot(this.botPlan(this.currentBall().botLevel));
   },
 
-  botPlan() {
+  botPlan(level) {
     const m = this.match;
-    const me = this.currentBall();
-    const foes = m.balls.filter(b => !b.dead && b !== me);
-    const distTo = (p) => Math.hypot(p.x - me.x, p.y - me.y);
-    let tx = TABLE_W / 2, ty = TABLE_H / 2;
-    const buffs = m.powerups.filter(u => !POWER_KINDS[u.k].trap);
-    if (buffs.length && (!foes.length || Math.random() < 0.3)) {
-      const u = buffs.reduce((a, c) => (distTo(c) < distTo(a) ? c : a));
-      tx = u.x; ty = u.y;
-    } else if (foes.length) {
-      // favour close and weak targets
-      const t = foes.reduce((a, c) => (distTo(c) + c.hp * 4 < distTo(a) + a.hp * 4 ? c : a));
-      tx = t.x; ty = t.y;
-    }
-    const a = Math.atan2(ty - me.y, tx - me.x) + (Math.random() * 2 - 1) * 0.09;
-    const power = Math.max(0.55, Math.min(1, Math.hypot(tx - me.x, ty - me.y) / 1000 + 0.35));
-    return { dx: Math.cos(a), dy: Math.sin(a), power, spin: { x: 0, y: 0 } };
+    return BotAI.plan({
+      balls: m.balls, table: m.table, barriers: m.barriers,
+      powerups: m.powerups, turnIdx: m.turnIdx,
+    }, level);
   },
 
   performShot(input) {
@@ -545,7 +534,7 @@ const Game = {
         m.turnTimer -= dt;
         if (m.turnTimer <= 0) {
           UI.toast('⏱ Time is up — auto shot!');
-          this.performShot(this.botPlan());
+          this.performShot(this.botPlan('easy')); // slow play isn't rewarded
         }
       }
     }

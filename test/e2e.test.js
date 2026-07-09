@@ -114,6 +114,16 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   }));
   check('guests cannot add bots', await g2.evaluate(() => document.getElementById('btn-add-bot').style.display === 'none'));
 
+  // host taps the difficulty chip: mid → hard, synced to every guest
+  check('bot spawns at MID level', await host.evaluate(() => document.querySelector('.bot-level').textContent === 'MID'));
+  await host.click('.bot-level');
+  await g2.waitForFunction(() => {
+    const chip = document.querySelector('.bot-level');
+    return chip && chip.textContent === 'HARD';
+  }, null, { timeout: 8000 });
+  check('bot level change reaches guests', true);
+  check('guests cannot change the level', await g2.evaluate(() => document.querySelector('.bot-level').disabled));
+
   // host picks table, everyone sees it
   await host.evaluate(() => document.querySelectorAll('#table-select .table-opt')[1].click());
   await sleep(500);
@@ -129,6 +139,8 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
 
   const starters = await Promise.all(Object.values(pages).map(p => p.evaluate(() => Game.currentBall().id)));
   check('all agree on starter', new Set(starters).size === 1);
+  check('bot ball carries its difficulty into the match',
+    await host.evaluate(() => Game.match.balls.find(b => b.isBot).botLevel === 'hard'));
 
   const state = (p) => p.evaluate(() => ({
     mode: Game.match.mode,
@@ -151,7 +163,14 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   };
 
   // play 4 turns (with 4 players that includes the bot's turn, host-simulated);
-  // whoever's turn it is shoots; assert convergence each time
+  // whoever's turn it is shoots; assert convergence each time.
+  // The bot's whole turn can play out inside a settle() poll window (guests'
+  // replays lag behind the host), so count its shots at the source too.
+  await host.evaluate(() => {
+    window.__botShots = 0;
+    const orig = Game.botShoot.bind(Game);
+    Game.botShoot = (tc) => { window.__botShots++; orig(tc); };
+  });
   let botPlayed = false;
   for (let turn = 0; turn < 4; turn++) {
     let shooterTag = null;
@@ -161,7 +180,6 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
     const tcBefore = await host.evaluate(() => Game.match.turnCount);
     if (!shooterTag) {
       // nobody local owns the turn: must be the bot — the host plays it alone
-      check(`turn ${turn + 1}: unowned turn belongs to the bot`, await host.evaluate(() => Game.currentBall().isBot));
       botPlayed = true;
     } else {
       const angle = 0.5 + turn * 1.9;
@@ -176,6 +194,7 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
     const turns = await Promise.all(Object.values(pages).map(p => p.evaluate(() => Game.currentBall().id)));
     check(`turn ${turn + 1}: everyone agrees whose turn is next`, new Set(turns).size === 1);
   }
+  botPlayed = botPlayed || await host.evaluate(() => window.__botShots > 0);
   check('the bot got a turn and auto-played it', botPlayed);
   console.log('hp after 4 turns:', JSON.stringify((await state(host)).balls));
 

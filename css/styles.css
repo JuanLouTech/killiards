@@ -294,6 +294,17 @@ input[type='text']:focus { border-color: var(--neon); }
 /* bots: yellow glowing ring, matching their in-game look */
 .p-ball.bot { border-color: #ffd84d; box-shadow: 0 0 10px rgba(255, 216, 77, 0.55); }
 .p-name .bot-tag { color: #ffd84d; border-color: #ffd84d; }
+.player-card .bot-level {
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  flex: none;
+}
+.player-card .bot-level:disabled { opacity: 0.8; cursor: default; }
+.bot-level.lvl-easy { color: #41ff5a; border-color: rgba(65, 255, 90, 0.5); }
+.bot-level.lvl-mid { color: #ffd84d; border-color: rgba(255, 216, 77, 0.5); }
+.bot-level.lvl-hard { color: #ff5a5a; border-color: rgba(255, 90, 90, 0.5); }
 .player-card .bot-remove { padding: 4px 9px; font-size: 12px; color: var(--dim); flex: none; }
 .player-card .bot-remove:active { color: var(--text); }
 .mini.add-bot {

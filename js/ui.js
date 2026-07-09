@@ -146,7 +146,7 @@ const UI = {
     while (this.lobby.players.some(p => p.id === 'B' + n)) n++;
     this.lobby.players.push({
       id: 'B' + n, name: '', emoji, color,
-      ready: true, isHost: false, isBot: true,
+      ready: true, isHost: false, isBot: true, level: 'mid',
     });
     this.hostBroadcastLobby();
   },
@@ -154,6 +154,14 @@ const UI = {
   hostRemoveBot(id) {
     if (!Net.isHost || this.inMatch) return;
     this.lobby.players = this.lobby.players.filter(p => p.id !== id);
+    this.hostBroadcastLobby();
+  },
+
+  hostCycleBotLevel(id) {
+    if (!Net.isHost || this.inMatch) return;
+    const p = this.lobby.players.find(x => x.id === id);
+    if (!p || !p.isBot) return;
+    p.level = BOT_LEVEL_IDS[(BOT_LEVEL_IDS.indexOf(p.level || 'mid') + 1) % BOT_LEVEL_IDS.length];
     this.hostBroadcastLobby();
   },
 
@@ -181,6 +189,16 @@ const UI = {
         <span class="p-ball${p.isBot ? ' bot' : ''}" style="background:${p.color}">${p.emoji}</span>
         <span class="p-name">${esc(dispName(p))}${p.isHost ? ' <i>HOST</i>' : ''}${p.isBot ? ' <i class="bot-tag">BOT</i>' : ''}${me ? ' <em>(you)</em>' : ''}</span>
         <span class="p-ready ${p.ready ? 'on' : ''}">${p.ready ? 'READY' : 'WAITING'}</span>`;
+      if (p.isBot) {
+        // difficulty chip: the host taps it to cycle easy → mid → hard
+        const lvl = document.createElement('button');
+        lvl.className = 'mini bot-level lvl-' + (p.level || 'mid');
+        lvl.textContent = (p.level || 'mid').toUpperCase();
+        lvl.title = 'Bot difficulty';
+        if (Net.isHost) lvl.addEventListener('click', () => this.hostCycleBotLevel(p.id));
+        else lvl.disabled = true;
+        div.appendChild(lvl);
+      }
       if (p.isBot && Net.isHost) {
         const rm = document.createElement('button');
         rm.className = 'mini bot-remove';
@@ -331,7 +349,7 @@ const UI = {
       tableId = TABLES[Math.floor(Math.random() * TABLES.length)].id;
     }
     const table = getTable(tableId);
-    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot }));
+    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot, level: p.level }));
     const spawns = shuffle([...table.spawns]).slice(0, order.length);
     const d = { tableId, order, spawns };
     Net.matchLocked = true;
