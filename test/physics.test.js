@@ -224,6 +224,19 @@ function check(name, cond) {
   check('trap/buff split', POWER_KIND_IDS.filter(k => POWER_KINDS[k].trap).length === 3);
 }
 
+// Test 10: side english kicks toward the side the hit point is on.
+// Ball aimed east (+x) with the dot set RIGHT must, after a head-on wall
+// bounce, drift to the RIGHT of its aim (screen-down, +y) — and mirrored.
+{
+  const t = getTable('classic');
+  for (const [sx, want] of [[1, +1], [-1, -1]]) {
+    const balls = mkBalls([[800, 450]], 1);
+    runTurn(t, balls, 0, { dx: 1, dy: 0, speed: 1200, spin: { x: sx, y: 0 } });
+    const drift = (balls[0].y - 450) * want;
+    check(`spin.x=${sx} deflects to the ${sx > 0 ? 'right' : 'left'} of aim`, drift > 30);
+  }
+}
+
 // Test 9: every spawn on every table is clear of obstacles and walls
 {
   for (const t of TABLES) {

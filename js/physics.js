@@ -19,7 +19,7 @@ const PHYS = {
   BORDER_DMG: 8,       // fixed damage on every NEW border contact
   BALL_DMG_K: 0.022,   // damage per unit of speed change in ball contacts
   MAX_T: 20,           // safety cap on turn length (seconds)
-  MAX_HP: 110,         // starting health
+  MAX_HP: 160,         // starting health
 
   // barriers (pushable squares, circle physics)
   BAR_R: 34,
@@ -183,10 +183,11 @@ class Sim {
     if (speed < 20) return;
     const fx = b.vx / speed, fy = b.vy / speed;
     const tx = -ny, ty = nx;
-    // spin.x = side english (deflects along the contact tangent)
+    // spin.x = side english: dot on the RIGHT kicks the ball to the right of
+    // its aim (the raw tangent points the other way, hence the negation)
     // spin.y = follow/draw (dot above center pushes through, below pulls back)
-    b.vx += tx * this.spin.x * speed * 0.45 + fx * (-this.spin.y) * speed * 0.4;
-    b.vy += ty * this.spin.x * speed * 0.45 + fy * (-this.spin.y) * speed * 0.4;
+    b.vx += tx * (-this.spin.x) * speed * 0.45 + fx * (-this.spin.y) * speed * 0.4;
+    b.vy += ty * (-this.spin.x) * speed * 0.45 + fy * (-this.spin.y) * speed * 0.4;
   }
 
   // Blast power-up: the shooter's first contact of any kind detonates.
