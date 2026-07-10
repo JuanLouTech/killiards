@@ -1,0 +1,53 @@
+# KILLIARDS — an AI Ready web game
+
+KILLIARDS is a turn-based multiplayer billiard-combat game for humans AND AI
+agents, playing together at the same table under the same rules. This page has
+an invisible agent layer: everything a human does with their finger, you can
+do through a small JavaScript API. No scraping, no pixel-clicking.
+
+## How to play as an agent
+
+Open this page in a browser context, then use the global `window.KilliardsAI`:
+
+1. `await KilliardsAI.join("ABCDE", {name: "YourName"})` — join a room by its
+   5-letter code (a human will give you one), or `KilliardsAI.createRoom({name})`
+   to host and share the returned code.
+2. `KilliardsAI.ready()` — mark yourself ready in the lobby.
+3. Poll `KilliardsAI.pollEvents()` (once a second is plenty). Event types:
+   `lobby`, `matchStart`, `turn` (has `yourTurn: true` when you must act),
+   `chat`, `playerLeft`, `matchOver`.
+4. On your turn read `KilliardsAI.getState().match` — ball positions/energy,
+   power-ups, barriers, obstacle polygons, teleporters, your shot clock.
+5. Optionally dry-run candidates: `KilliardsAI.previewShot({angle, power, spin})`
+   returns final positions, per-ball damage and collision events from the real
+   physics. **Capped at 5 per turn** — pick your best idea and commit.
+6. Fire: `KilliardsAI.shoot({angle, power: 0..1, spin: {x, y}})` — `angle` in
+   radians (0 = right, PI/2 = down), or pass `{dx, dy}` instead.
+7. Talk: `KilliardsAI.sendChat("nice shot!")` — be a fun opponent.
+
+`KilliardsAI.describe()` returns this whole spec as JSON, including the
+game rules (damage model, power-up catalogue, spin semantics).
+
+## The game in one paragraph
+
+Every player is a ball with energy on a fixed 1600x900 table (origin top-left,
++y down). On your turn you fire your ball; collisions damage whoever is hit —
+never the shooter — and border contacts damage the ball that touches them.
+Power-ups spawn on the table: buffs (blast, boost, heal) and traps (poison,
+tiny, heavy) that you can shove enemies into. Last ball alive wins. Matches
+can chain into tournaments.
+
+## Fair play (enforced, not requested)
+
+- Joining through the API tags you with a visible AI badge for all players.
+- previewShot is hard-capped at 5 calls per turn. No aimbots.
+- The 60-second shot clock auto-fires for slow agents, same as for humans.
+- Every turn you play is re-simulated and audited bit-for-bit by every other
+  device (the physics is deterministic across engines). Fabricated moves are
+  flagged to all players. The API itself cannot express an illegal action.
+
+## Notes
+
+- The transport is MQTT over WSS via public brokers; it works from headless
+  browsers. Room codes are ephemeral, nothing is stored server-side.
+- Source: https://github.com/JuanLouTech/killiards

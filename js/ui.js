@@ -122,7 +122,7 @@ const UI = {
     // admission-time capacity check doesn't cover them — re-check here
     if (this.inMatch) return;
     if (this.lobby.players.length >= 6) { Net.toGuest(id, { t: 'busy' }); return; }
-    this.lobby.players.push({ id, name: prof.name, emoji: prof.emoji, color: prof.color, ready: false, isHost: false });
+    this.lobby.players.push({ id, name: prof.name, emoji: prof.emoji, color: prof.color, ready: false, isHost: false, isAgent: !!prof.isAgent });
     this.hostBroadcastLobby();
   },
 
@@ -194,7 +194,7 @@ const UI = {
       div.className = 'player-card' + (me ? ' me' : '') + (p.isBot ? ' bot' : '');
       div.innerHTML = `
         <span class="p-ball${p.isBot ? ' bot' : ''}" style="background:${p.color}">${p.emoji}</span>
-        <span class="p-name">${esc(dispName(p))}${p.isHost ? ' <i>HOST</i>' : ''}${p.isBot ? ' <i class="bot-tag">BOT</i>' : ''}${me ? ' <em>(you)</em>' : ''}</span>
+        <span class="p-name">${esc(dispName(p))}${p.isHost ? ' <i>HOST</i>' : ''}${p.isBot ? ' <i class="bot-tag">BOT</i>' : ''}${p.isAgent ? ' <i class="bot-tag">AI</i>' : ''}${me ? ' <em>(you)</em>' : ''}</span>
         <span class="p-ready ${p.ready ? 'on' : ''}">${p.ready ? 'READY' : 'WAITING'}</span>`;
       if (p.isBot) {
         // difficulty chip: the host taps it to cycle easy → mid → hard
@@ -388,7 +388,7 @@ const UI = {
       tableId = TABLES[Math.floor(Math.random() * TABLES.length)].id;
     }
     const table = getTable(tableId);
-    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot, level: p.level }));
+    const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot, isAgent: !!p.isAgent, level: p.level }));
     const spawns = shuffle([...table.spawns]).slice(0, order.length);
     const d = { tableId, order, spawns, borderDmg: this.lobby.borderDmg || 'low' };
     if (tour) d.tour = tour;
@@ -463,7 +463,7 @@ const UI = {
         `<span class="tp-hp"><i style="width:${Math.round(pct * 100)}%;background:hsl(${Math.round(pct * 115)},90%,48%)"></i></span>`;
       pill.innerHTML =
         `<span class="tp-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>` +
-        `<span class="tp-name">${esc(dispName(b))}${b.id === Net.myId ? ' <em>you</em>' : ''}</span>` +
+        `<span class="tp-name">${esc(dispName(b))}${b.isAgent ? ' 🤖' : ''}${b.id === Net.myId ? ' <em>you</em>' : ''}</span>` +
         hpBar +
         (fx ? `<span class="tp-fx">${fx}</span>` : '');
       el.appendChild(pill);
@@ -577,7 +577,7 @@ const UI = {
       div.innerHTML = `
         <span class="rank-pos">${medals[i] || (i + 1) + 'º'}</span>
         <span class="p-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>
-        <span class="p-name">${esc(dispName(b))}${b.isBot ? ' <i class="bot-tag">BOT</i>' : ''}</span>
+        <span class="p-name">${esc(dispName(b))}${b.isBot ? ' <i class="bot-tag">BOT</i>' : ''}${b.isAgent ? ' <i class="bot-tag">AI</i>' : ''}</span>
         <span class="rank-note">${b.dead ? 'Survived ' + b.deathTurn + ' turn' + (b.deathTurn === 1 ? '' : 's') : (i === 0 ? 'WINNER' : 'Survived')}</span>
         ${t ? `<span class="rank-pts">+${pts}</span>` : ''}`;
       list.appendChild(div);

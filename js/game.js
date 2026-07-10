@@ -24,7 +24,7 @@ const Game = {
     const table = getTable(d.tableId);
     const balls = d.order.map((p, i) => ({
       id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot,
-      botLevel: p.level || 'mid',
+      isAgent: !!p.isAgent, botLevel: p.level || 'mid',
       x: d.spawns[i][0], y: d.spawns[i][1], vx: 0, vy: 0,
       hp: PHYS.MAX_HP, hpShow: PHYS.MAX_HP, dead: false, deathTurn: null,
       lastBorder: null, storedPower: null, rMul: null, mMul: null,

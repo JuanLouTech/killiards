@@ -19,6 +19,22 @@ Join button.
 Connection diagnostics: tap the logo 3× (or add `?debug` to the URL) for a live
 connection log with a copy button.
 
+## AI Ready 🤖
+
+KILLIARDS is playable by AI agents, together with humans, at the same table and
+under the same rules. The page ships an invisible layer — `window.KilliardsAI`
+(`js/agent.js`) — that lets an agent join a room, read the full game state,
+dry-run a few candidate shots through the real physics, fire through the exact
+same code path as a touch drag, and talk in the chat. Discovery for visiting
+agents: [`/llms.txt`](llms.txt) describes the API, and `KilliardsAI.describe()`
+returns the same spec as JSON.
+
+Fair play is enforced by construction, not requested: agents are tagged with a
+visible **AI** badge, `previewShot` is hard-capped at 5 dry-runs per turn (no
+aimbots), the 60s shot clock auto-fires for slow agents, and — like every
+player — their turns are re-simulated and audited bit-for-bit by every other
+device. The API cannot express an illegal move.
+
 ## How it works
 
 The core rule of the whole design: **exactly one device simulates each turn, and
@@ -60,9 +76,15 @@ Nothing is ever computed independently on two devices, so states can never diver
 - **Barriers are just extra bodies** in the recording (frames carry balls first,
   then barriers), and teleporters are static table features with a re-entry
   lock — so both replay exactly like everything else.
-- The moment a shot is fired, a tiny `shot` notice is broadcast (the recording
-  itself only ships once the physics settle) so the other devices can show a
-  **SIMULATING…** status instead of a mysteriously frozen table.
+- **Turns look realtime.** The moment a shot is fired, a `shot` message with
+  the exact inputs is broadcast; the physics are bit-identical across JS
+  engines (only IEEE-exact operations — see `PHYS.SIM_V`), so every idle
+  device runs the very same turn live instead of waiting. The shooter's
+  recording still ships when its sim settles and stays authoritative — but
+  now doubles as an **anti-cheat audit**: each device compares its own run
+  against it exactly and flags divergence in the connection log. Devices that
+  can't run the shot live (mid-replay, older client) fall back to a
+  **SIMULATING…** status and replay the recording as before.
 - The **best play** replayed at the end is scored identically on every device
   from the turn payloads (damage to others + kill bonus), so everyone agrees on
   it with zero extra networking.
@@ -98,7 +120,8 @@ Nothing is ever computed independently on two devices, so states can never diver
   simulates their turns like normal shots, so guests just see turns arrive.
 - Names are optional: nameless players (and bots) show their **emoji** in the
   turn banner, roulette, lobby and ranking instead.
-- **Emotes**: a reaction bar under the pad broadcasts floating emojis any time.
+- **Chat**: a 💬 button (with unread badge) opens a text chat that works on
+  every room screen; anyone can talk at any time, the host relays.
 - Match ends when one player remains; ranking is by survival time. Before the
   ranking, the **best play** of the match (most damage + kills) is replayed —
   skippable, chosen identically on every device with no extra networking.
@@ -133,9 +156,11 @@ To play across the internet, deploy the folder to any static host
   levels); pure physics, also runs headless in Node
 - `js/game.js` — turn conductor: live sim / replay / turn queue / power-up
   lifecycle / bot turns / shot clock / best play / ranking
-- `js/ui.js` — screens, lobby state (incl. bots + invite peek), roulette, ranking
-- `js/main.js` — boot + message wiring (turn/shot/emote relays, emote bar,
-  invite links)
+- `js/ui.js` — screens, lobby state (incl. bots + invite peek), roulette,
+  ranking, chat, tournaments
+- `js/main.js` — boot + message wiring (turn/shot/chat relays, invite links)
+- `js/agent.js` — the AI Ready layer: `window.KilliardsAI` (see above)
+- `llms.txt` — the agent-facing description of the game and API
 
 ## Contributing
 
@@ -155,6 +180,11 @@ whatever makes the game better. Two things to keep in mind:
   obstacles, spin, recording size/consistency). No dependencies.
 - `node test/bots.test.js` — headless bot-AI checks: shot sanity, planning
   speed, and full bots-only matches asserting HARD beats EASY. No dependencies.
+- `node test/verify.test.js` — headless turn-audit checks: honest payloads
+  verify clean, forged hp/frames/inputs/power-ups are flagged. No dependencies.
+- `node test/agent.e2e.test.js` — an agent playing ONLY through
+  `window.KilliardsAI` against a human-driven page: join + AI badge, preview
+  cap, audited shots, chat both ways, matchOver. Same setup as e2e.test.js.
 - `node test/e2e.test.js` — full 3-player match in headless Chromium
   (invite link + lobby → bot levels → table select → roulette → turns → replay
   convergence → disconnect). Hermetic: the MQTT layer is shimmed over
