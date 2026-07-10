@@ -207,6 +207,17 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   check('the bot got a turn and auto-played it', botPlayed);
   console.log('hp after 4 turns:', JSON.stringify((await state(host)).balls));
 
+  // every watched turn was run locally from its shot inputs (live when idle,
+  // re-simulated on the fallback path) and audited against the recording
+  for (const [tag, p] of Object.entries(pages)) {
+    const logs = await p.evaluate(() => Net.logs.join('\n'));
+    const verified = (logs.match(/physics verified ✓/g) || []).length;
+    const live = (logs.match(/✓ \[live\]/g) || []).length;
+    const dirty = ['FAILED VERIFICATION', 'verify skipped', 'verify error', 'audit error'].filter(s => logs.includes(s));
+    check(`${tag}: watched turns audit clean (${verified} verified, ${live} live)`, verified >= 2 && live >= 1 && !dirty.length);
+    if (dirty.length) console.log('   dirty:', dirty.join(', '));
+  }
+
   // chat: g2 sends a message, everyone (host relays) logs it + sees the toast
   await g2.evaluate(() => UI.openChat());
   await g2.fill('#chat-input', 'good shot!');
@@ -236,7 +247,7 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
 
   // shot clock: on the shooter's page (focus stubbed — headless pages report
   // no focus) the timer shows, runs out, and fires the turn by itself; other
-  // pages show SIMULATING… while the recording plays
+  // pages pick the shot inputs up immediately and run the turn live themselves
   {
     // if a bot holds the turn, let it finish first
     for (let i = 0; i < 3; i++) {
@@ -256,12 +267,12 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
     check('shot clock visible on the active player', true);
     const tcBefore = await host.evaluate(() => Game.match.turnCount);
     await shooter.evaluate(() => { Game.match.turnTimer = 0.8; });
-    // the watcher's own table is still idle (no recording yet) but it must
-    // already know a shot is being simulated on the shooter's device
+    // the watcher doesn't wait for the recording: the 'shot' message carries
+    // the inputs and it runs the identical turn live, in real time
     await watcher.waitForFunction(() =>
-      Game.match.mode === 'idle' && document.getElementById('turn-sub').textContent.includes('SIMULATING'),
+      Game.match.mode === 'livewatch' || Game.match.mode === 'end',
     null, { timeout: 20000 });
-    check('watchers see SIMULATING… while waiting for the recording', true);
+    check('watchers run the fired shot live (no SIMULATING wait)', true);
     check('shot clock auto-fires the turn', !!(await settle(tcBefore)));
   }
 

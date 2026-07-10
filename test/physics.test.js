@@ -331,5 +331,39 @@ function check(name, cond) {
   }
 }
 
+// Test 16: determinism guard — the sim must stay bit-identical across JS
+// engines, so physics.js may only use IEEE-exact Math functions. Math.exp
+// and Math.hypot have engine-dependent precision (see PHYS.SIM_V).
+{
+  const psrc = fs.readFileSync(path + 'physics.js', 'utf8');
+  const banned = psrc.match(/Math\.(?!sqrt\b|round\b|abs\b|min\b|max\b|floor\b|ceil\b|sign\b|trunc\b)\w+\(/g);
+  check('physics.js uses only IEEE-exact Math ops', !banned);
+  if (banned) console.log('   banned calls:', [...new Set(banned)].join(' '));
+}
+
+// Test 17: identical inputs → bit-identical re-simulation (the basis of the
+// turn audit in Game.verifyTurn) on a busy table: barriers, a power-up
+// pickup, spin, an active tiny effect and a blast, all in one turn.
+{
+  const t = getTable('bastion');
+  const run = () => {
+    const balls = mkBalls(t.spawns, 4);
+    balls[1].fxNow = 'tiny';
+    const barriers = t.barriers.map(([x, y]) => ({ x, y, vx: 0, vy: 0 }));
+    const powerups = [{ id: 'u1', k: 'boost', x: 900, y: 600, born: 1 }];
+    const sim = new Sim(balls, t, 0,
+      { dx: 0.71, dy: 0.7, speed: 1387.3, spin: { x: 0.33, y: -0.41 } },
+      { barriers, powerups, effect: 'blast', borderDmg: 4 });
+    let n = 0;
+    while (!sim.step() && n++ < 3600) { /* run */ }
+    return JSON.stringify({
+      f: sim.frames, e: sim.events,
+      p: balls.map(b => [b.x, b.y, b.hp]),
+      bar: barriers.map(b => [b.x, b.y]), pu: powerups,
+    });
+  };
+  check('re-simulation is bit-identical', run() === run());
+}
+
 console.log(failures ? `\n${failures} FAILURES` : '\nALL PASS');
 process.exit(failures ? 1 : 0);

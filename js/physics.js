@@ -1,16 +1,23 @@
 // Turn simulation. Runs only on the active player's device; every fixed step
-// is recorded so other devices can replay the exact same motion.
+// is recorded so other devices can replay the exact same motion. The sim is
+// bit-identical on every JS engine — it only uses IEEE-exact operations
+// (+ - * / sqrt) — so receivers can also re-run a turn from its shot inputs
+// and audit the recording (Game.verifyTurn).
 //
 // Besides player balls the sim can carry extra "bodies": pushable barriers
 // (blue squares that behave like heavy balls) recorded in the same frames.
 // Static table features handled here: teleporter pairs and power-up pickups.
 
 const PHYS = {
+  SIM_V: 2,            // sim math version — bump on any change that alters results
   DT: 1 / 60,          // fixed physics step
   REC_EVERY: 2,        // record positions every N steps (30fps recording)
   R: 28,               // ball radius
-  DRAG: 0.6,           // exponential drag for living balls
-  DEAD_DRAG: 2.4,      // dead balls are heavier to push around
+  // Per-step drag multipliers: e^(-drag/60) precomputed as literals (drag:
+  // living 0.6, dead 2.4 — dead balls are heavier to push around). Math.exp
+  // precision varies between JS engines; parsed literals do not.
+  DRAG_MULT: 0.9900498337491681,
+  DEAD_DRAG_MULT: 0.9607894391523232,
   WALL_E: 0.86,        // wall restitution
   BALL_E: 0.95,        // ball-ball restitution
   STOP: 8,             // speed below which a ball fully stops
@@ -24,7 +31,7 @@ const PHYS = {
   // barriers (pushable squares, circle physics)
   BAR_R: 34,
   BAR_M: 1.9,          // heavier than balls: launched barriers hit hard
-  BAR_DRAG: 1.0,
+  BAR_DRAG_MULT: 0.9834714538216175, // e^(-1.0/60)
 
   // teleporters
   TELE_R: 46,          // trigger radius around each portal center
@@ -65,6 +72,12 @@ const POWER_KINDS = {
   heavy:  { emoji: '🪨', name: 'Heavy ball',  trap: true,  delayed: true, desc: 'the ball is heavy & sluggish for the whole next turn' },
 };
 const POWER_KIND_IDS = Object.keys(POWER_KINDS);
+
+// Math.hypot's precision is engine-dependent; x*x + y*y and Math.sqrt are
+// IEEE-exact everywhere, which keeps the sim bit-identical across devices.
+function hyp(x, y) {
+  return Math.sqrt(x * x + y * y);
+}
 
 // Closest point on segment ab to point p.
 function closestOnSegment(px, py, ax, ay, bx, by) {
@@ -124,8 +137,8 @@ class Sim {
       // before it can teleport again
       b.teleLock = null;
       this.teles.forEach((t, ti) => {
-        if (Math.hypot(b.x - t.a[0], b.y - t.a[1]) < PHYS.TELE_R ||
-            Math.hypot(b.x - t.b[0], b.y - t.b[1]) < PHYS.TELE_R) b.teleLock = ti;
+        if (hyp(b.x - t.a[0], b.y - t.a[1]) < PHYS.TELE_R ||
+            hyp(b.x - t.b[0], b.y - t.b[1]) < PHYS.TELE_R) b.teleLock = ti;
       });
     }
     // delayed effects (tiny/heavy picked up last turn) are active for this
@@ -192,7 +205,7 @@ class Sim {
     if (!this.spin || this.spinApplied) return;
     this.spinApplied = true;
     const b = this.balls[this.shooterIdx];
-    const speed = Math.hypot(b.vx, b.vy);
+    const speed = hyp(b.vx, b.vy);
     if (speed < 20) return;
     const fx = b.vx / speed, fy = b.vy / speed;
     const tx = -ny, ty = nx;
@@ -209,7 +222,7 @@ class Sim {
     this.blastArmed = false;
     const ev = { f: this.recFrame(), type: 'boom', x: Math.round(cx), y: Math.round(cy), mag: 900, victims: [] };
     this.bodies.forEach((b, i) => {
-      const d = Math.hypot(b.x - cx, b.y - cy);
+      const d = hyp(b.x - cx, b.y - cy);
       if (d > PHYS.BLAST_R) return;
       const k = 1 - d / PHYS.BLAST_R;
       if (d > 0.5) {
@@ -258,7 +271,7 @@ class Sim {
         const [ax, ay] = pts[e];
         const [bx, by] = pts[(e + 1) % pts.length];
         const [cx, cy] = closestOnSegment(b.x, b.y, ax, ay, bx, by);
-        const d = Math.hypot(b.x - cx, b.y - cy);
+        const d = hyp(b.x - cx, b.y - cy);
         if (!best || d < best.d) best = { d, cx, cy, e };
       }
       const inside = pointInConvexPoly(b.x, b.y, pts);
@@ -270,7 +283,7 @@ class Sim {
         const [ax, ay] = pts[best.e];
         const [bx2, by2] = pts[(best.e + 1) % pts.length];
         const ex = bx2 - ax, ey = by2 - ay;
-        const el = Math.hypot(ex, ey) || 1;
+        const el = hyp(ex, ey) || 1;
         nx = ey / el; ny = -ex / el;
         if (pointInConvexPoly(b.x + nx * 5, b.y + ny * 5, pts)) { nx = -nx; ny = -ny; }
         b.x = best.cx + nx * R;
@@ -299,7 +312,7 @@ class Sim {
         const a = this.bodies[i], b = this.bodies[j];
         const RR = this.bodyR(a) + this.bodyR(b);
         const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.hypot(dx, dy);
+        const d = hyp(dx, dy);
         if (d >= RR || d === 0) continue;
         const nx = dx / d, ny = dy / d;
         // separate overlap equally
@@ -336,8 +349,8 @@ class Sim {
     if (!this.teles.length) return;
     for (const b of this.bodies) {
       this.teles.forEach((t, ti) => {
-        const da = Math.hypot(b.x - t.a[0], b.y - t.a[1]);
-        const db = Math.hypot(b.x - t.b[0], b.y - t.b[1]);
+        const da = hyp(b.x - t.a[0], b.y - t.a[1]);
+        const db = hyp(b.x - t.b[0], b.y - t.b[1]);
         if (b.teleLock === ti) {
           if (da > PHYS.TELE_R + 20 && db > PHYS.TELE_R + 20) b.teleLock = null;
           return;
@@ -363,7 +376,7 @@ class Sim {
       if (b.dead) continue;
       for (let p = this.pu.length - 1; p >= 0; p--) {
         const u = this.pu[p];
-        if (Math.hypot(b.x - u.x, b.y - u.y) < PHYS.PU_R + this.bodyR(b)) {
+        if (hyp(b.x - u.x, b.y - u.y) < PHYS.PU_R + this.bodyR(b)) {
           this.pu.splice(p, 1);
           const ev = { f: this.recFrame(), type: 'pu', x: u.x, y: u.y,
             id: u.id, k: u.k, i, mag: 0, victims: [] };
@@ -403,10 +416,9 @@ class Sim {
 
     let anyMoving = false;
     for (const b of this.bodies) {
-      const drag = b.isBar ? PHYS.BAR_DRAG : (b.dead ? PHYS.DEAD_DRAG : PHYS.DRAG);
-      const mult = Math.exp(-drag * dt);
+      const mult = b.isBar ? PHYS.BAR_DRAG_MULT : (b.dead ? PHYS.DEAD_DRAG_MULT : PHYS.DRAG_MULT);
       b.vx *= mult; b.vy *= mult;
-      if (Math.hypot(b.vx, b.vy) < PHYS.STOP) { b.vx = 0; b.vy = 0; }
+      if (hyp(b.vx, b.vy) < PHYS.STOP) { b.vx = 0; b.vy = 0; }
       else anyMoving = true;
     }
 

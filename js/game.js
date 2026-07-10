@@ -1,7 +1,13 @@
 // Match conductor: turn sequencing, live simulation + recording on the active
-// player's device, faithful replay everywhere else, damage animation, deaths,
-// power-up lifecycle, bot turns (host-simulated), best-play tracking and the
-// final survival ranking.
+// player's device, damage animation, deaths, power-up lifecycle, bot turns
+// (host-simulated), best-play tracking and the final survival ranking.
+//
+// Other devices don't wait for the recording: the 'shot' message carries the
+// exact inputs, and the sim is bit-exact (physics.js), so every device runs
+// the turn live itself the moment the shot fires ('livewatch'). The shooter's
+// recording arrives when its sim settles and is used to AUDIT the local run
+// before its authoritative final state is applied. Devices that can't run the
+// shot live (mid-replay, older sim version) fall back to SIMULATING… + replay.
 
 const Game = {
   match: null,
@@ -32,8 +38,10 @@ const Game = {
       barriers: (table.barriers || []).map(([x, y]) => ({ x, y, vx: 0, vy: 0, isBar: true })),
       powerups: [],
       turnIdx: 0, turnCount: 1,
-      mode: 'idle',       // idle | live | replay | end | bestplay | over
+      mode: 'idle',       // idle | live | livewatch | replay | end | bestplay | over
       sim: null, replay: null, endPhase: null, turnQueue: [],
+      watch: null,        // livewatch bookkeeping (tc, pending payload, own sim)
+      leavers: [],        // departures deferred until the running sim settles
       activeFx: null,     // stored power consumed by the current shot
       waitingSimTc: null, // turn number someone announced a shot for
       hpAtTurn: balls.map(b => b.hp),
@@ -112,6 +120,7 @@ const Game = {
     m.activeFx = effect;
     const speed = PHYS.MIN_SHOT + input.power * (PHYS.MAX_SHOT - PHYS.MIN_SHOT);
     const shot = { dx: input.dx, dy: input.dy, speed, spin: input.spin };
+    m.shotInput = { dx: input.dx, dy: input.dy, power: input.power, spin: input.spin || null };
     m.sim = new Sim(m.balls, m.table, m.turnIdx, shot, {
       barriers: m.barriers,
       powerups: m.powerups,
@@ -120,19 +129,84 @@ const Game = {
       onEvent: (ev) => this.handleEvent(ev),
     });
     m.mode = 'live';
-    // tell everyone the shot happened NOW — the recording only ships when the
-    // simulation settles, and until then their tables sit still
-    Net.send({ t: 'shot', d: { tc: m.turnCount } });
+    // tell everyone the shot happened NOW, inputs included, so they can run
+    // the very same turn live instead of waiting for the recording
+    Net.send({ t: 'shot', d: { tc: m.turnCount, sh: m.turnIdx, v: PHYS.SIM_V, in: m.shotInput, fx: effect } });
     SFX.shoot(input.power);
     Controls.setTurn({ active: false, color: shooter.color });
   },
 
-  // Another device fired its shot and is busy simulating: show SIMULATING…
-  // until its recording arrives (matched by turn number, so a notice that
-  // outruns our lagging replay still applies once we catch up).
+  // Another device fired its shot. If we're idle and speak the same sim
+  // version, run the turn ourselves in real time from the inputs — the
+  // bit-exact sim computes the identical motion on every device. Otherwise
+  // fall back to SIMULATING… + replaying the recording when it arrives.
   onShotFired(d) {
     const m = this.match;
-    if (m) m.waitingSimTc = d.tc;
+    if (!m || m.mode === 'over') return;
+    if (d.v === PHYS.SIM_V && d.in && m.mode === 'idle'
+        && d.tc === m.turnCount && d.sh === m.turnIdx) {
+      this.startWatchSim(d);
+      return;
+    }
+    m.waitingSimTc = d.tc;
+  },
+
+  startWatchSim(d) {
+    const m = this.match;
+    m.waitingSimTc = null;
+    const shooter = m.balls[d.sh];
+    const effect = shooter.storedPower || null; // mirrors performShot
+    shooter.storedPower = null;
+    m.activeFx = effect;
+    m.watch = {
+      tc: d.tc, sh: d.sh, pending: null, done: false, sim: null,
+      bad: effect === (d.fx || null) ? []
+        : [`effect claims ${d.fx || 'none'}, we know ${effect || 'none'}`],
+    };
+    const speed = PHYS.MIN_SHOT + d.in.power * (PHYS.MAX_SHOT - PHYS.MIN_SHOT);
+    m.sim = new Sim(m.balls, m.table, d.sh,
+      { dx: d.in.dx, dy: d.in.dy, speed, spin: d.in.spin },
+      { barriers: m.barriers, powerups: m.powerups, effect,
+        borderDmg: m.borderDmg, onEvent: (ev) => this.handleEvent(ev) });
+    m.mode = 'livewatch';
+    SFX.shoot(d.in.power);
+  },
+
+  finishWatchTurn() {
+    const m = this.match;
+    const w = m.watch;
+    w.sim = m.sim;
+    m.sim = null;
+    w.done = true;
+    // we start (and so finish) later than the shooter, so its recording is
+    // normally already here; otherwise it applies on arrival (onTurnResult)
+    if (w.pending) this.finalizeWatch(w.pending);
+    else if (m.leavers.includes(m.balls[w.sh].id)) this.finalizeWatch(null);
+  },
+
+  finalizeWatch(d) {
+    const m = this.match;
+    const w = m.watch;
+    m.watch = null;
+    if (d) {
+      try {
+        this.auditTurn(d, w.sim, m.balls, m.barriers, m.powerups, w.bad, 'live');
+      } catch (e) {
+        Net.log(`turn ${d.tc}: audit error — ${e.message}`);
+      }
+      this.scoreBestPlay(d);
+      this.runEndSequence(d.final);
+    } else {
+      // the shooter left before its result arrived: every device finalizes
+      // from its own bit-exact run instead (identical everywhere; only the
+      // departed shooter's power-up spawn roll is skipped)
+      Net.log(`turn ${w.tc}: shooter left — finalized from the local run`);
+      const payload = { tc: w.tc, sh: w.sh, frames: w.sim.frames, events: w.sim.events,
+        act: m.balls.map(b => b.fxNow || null), final: this.buildFinal(null) };
+      this.scoreBestPlay(payload);
+      this.runEndSequence(payload.final);
+    }
+    this.drainLeaves();
   },
 
   finishLiveTurn() {
@@ -141,23 +215,31 @@ const Game = {
     const payload = {
       tc: m.turnCount,
       sh: m.turnIdx,
+      v: PHYS.SIM_V,
+      in: m.shotInput, // exact shot inputs: receivers re-simulate and audit the turn
       fx: m.activeFx,
       act: m.balls.map(b => b.fxNow || null),   // effects active during this turn (replay visuals)
       frames: m.sim.frames,
       events: m.sim.events,
-      final: {
-        p: m.balls.map(b => [Math.round(b.x), Math.round(b.y)]),
-        hp: m.balls.map(b => Math.round(b.hp * 10) / 10),
-        sp: m.balls.map(b => b.storedPower || null),
-        eff: m.balls.map(b => b.fxNext || null), // tiny/heavy scheduled for the next turn
-        bar: m.barriers.map(b => [Math.round(b.x), Math.round(b.y)]),
-        pu: m.powerups.concat(spawn ? [spawn] : []),
-      },
+      final: this.buildFinal(spawn),
     };
     m.sim = null;
     this.scoreBestPlay(payload);
     Net.send({ t: 'turn', d: payload });
     this.runEndSequence(payload.final);
+    this.drainLeaves();
+  },
+
+  buildFinal(spawn) {
+    const m = this.match;
+    return {
+      p: m.balls.map(b => [Math.round(b.x), Math.round(b.y)]),
+      hp: m.balls.map(b => Math.round(b.hp * 10) / 10),
+      sp: m.balls.map(b => b.storedPower || null),
+      eff: m.balls.map(b => b.fxNext || null), // tiny/heavy scheduled for the next turn
+      bar: m.barriers.map(b => [Math.round(b.x), Math.round(b.y)]),
+      pu: m.powerups.concat(spawn ? [spawn] : []),
+    };
   },
 
   // A power-up may appear for the NEXT turn. The device that just simulated
@@ -199,6 +281,14 @@ const Game = {
   onTurnResult(d) {
     const m = this.match;
     if (!m || m.mode === 'over') return;
+    if (d.tc < m.turnCount) return; // stale duplicate of an already-applied turn
+    // we ran this turn live ourselves: the recording is the audit + the
+    // authoritative final, applied once our own run settles
+    if (m.mode === 'livewatch' && m.watch && d.tc === m.watch.tc) {
+      m.watch.pending = d;
+      if (m.watch.done) this.finalizeWatch(d);
+      return;
+    }
     // a recording can arrive while this device is still replaying the
     // previous turn (bot turns: the host plays on without waiting for our
     // replay to finish) — queue it instead of clobbering the replay
@@ -209,8 +299,67 @@ const Game = {
     this.startReplay(d);
   },
 
+  // Anti-cheat audit: compare OUR run of turn `d` — live (livewatch) or
+  // re-simulated from the shot inputs — against the shooter's payload. The
+  // sim is bit-exact across engines (physics.js, PHYS.SIM_V) and every device
+  // starts the turn from the same authoritative state, so an honest recording
+  // matches EXACTLY. Burn-in phase: results only go to the connection log
+  // panel; the shooter's payload stays authoritative for the final state.
+  auditTurn(d, sim, balls, barriers, powerups, bad, how) {
+    const who = balls[d.sh] ? dispName(balls[d.sh]) : '#' + d.sh;
+    const J = JSON.stringify;
+    if (J(sim.frames) !== J(d.frames)) {
+      const at = sim.frames.findIndex((f, i) => J(f) !== J(d.frames[i]));
+      bad.push(`frames (${sim.frames.length} vs ${d.frames.length}, first diff #${at})`);
+    }
+    if (J(sim.events) !== J(d.events)) bad.push('events');
+    const fin = d.final;
+    if (J(balls.map(b => [Math.round(b.x), Math.round(b.y)])) !== J(fin.p)) bad.push('positions');
+    if (J(balls.map(b => Math.round(b.hp * 10) / 10)) !== J(fin.hp)) bad.push('hp');
+    if (J(balls.map(b => b.storedPower || null)) !== J(fin.sp)) bad.push('stored powers');
+    if (J(balls.map(b => b.fxNext || null)) !== J(fin.eff)) bad.push('scheduled effects');
+    if (J(barriers.map(b => [Math.round(b.x), Math.round(b.y)])) !== J(fin.bar)) bad.push('barriers');
+    // final.pu = surviving power-ups + at most one fresh spawn (born this
+    // turn, rolled outside the sim) — only the survivors are checkable
+    const puKey = (list) => J(list.map(u => [u.id, u.k, u.x, u.y, u.born]));
+    if (puKey(powerups) !== puKey(fin.pu.filter(u => u.born !== d.tc))) bad.push('power-up survivors');
+
+    if (bad.length) Net.log(`⚠️ turn ${d.tc} (${who}) FAILED VERIFICATION: ${bad.join(', ')}`);
+    else Net.log(`turn ${d.tc} (${who}): physics verified ✓ [${how}]`);
+  },
+
+  // Fallback-path audit (we replayed the recording instead of running the
+  // turn live): re-run it from the shot inputs on cloned state and compare.
+  verifyTurn(d) {
+    const m = this.match;
+    const who = m.balls[d.sh] ? dispName(m.balls[d.sh]) : '#' + d.sh;
+    if (d.v !== PHYS.SIM_V || !d.in) {
+      Net.log(`turn ${d.tc} (${who}): verify skipped — sim v${d.v ?? '?'} vs ours v${PHYS.SIM_V}`);
+      return;
+    }
+    try {
+      const balls = m.balls.map(b => ({ ...b }));
+      const barriers = m.barriers.map(b => ({ ...b }));
+      const powerups = m.powerups.map(u => ({ ...u }));
+      const bad = [];
+      const effect = balls[d.sh].storedPower || null; // mirrors performShot
+      balls[d.sh].storedPower = null;
+      if (effect !== (d.fx || null)) bad.push(`effect claims ${d.fx || 'none'}, we know ${effect || 'none'}`);
+      const speed = PHYS.MIN_SHOT + d.in.power * (PHYS.MAX_SHOT - PHYS.MIN_SHOT);
+      const sim = new Sim(balls, m.table, d.sh,
+        { dx: d.in.dx, dy: d.in.dy, speed, spin: d.in.spin },
+        { barriers, powerups, effect, borderDmg: m.borderDmg });
+      let guard = 0;
+      while (!sim.step() && guard++ < 60 * (PHYS.MAX_T + 1)) { /* run silently */ }
+      this.auditTurn(d, sim, balls, barriers, powerups, bad, 're-sim');
+    } catch (e) {
+      Net.log(`turn ${d.tc} (${who}): verify error — ${e.message}`);
+    }
+  },
+
   startReplay(d) {
     const m = this.match;
+    this.verifyTurn(d);
     m.waitingSimTc = null; // the wait is over: we're about to see the motion
     this.scoreBestPlay(d);
     // effect visuals during the replay (positions come from the frames)
@@ -482,6 +631,17 @@ const Game = {
   playerLeft(id) {
     const m = this.match;
     if (!m || m.mode === 'over') return;
+    // never kill a ball while a simulation is running: dead balls drag
+    // differently, and each device learns of the departure at a different
+    // moment mid-sim — defer to the turn boundary so all runs stay identical
+    if (m.mode === 'live' || m.mode === 'livewatch') {
+      m.leavers.push(id);
+      const w = m.watch;
+      // the shooter itself left after our watch run settled: no recording is
+      // coming anymore, finalize from the local run now
+      if (w && w.done && !w.pending && m.balls[w.sh].id === id) this.finalizeWatch(null);
+      return;
+    }
     const idx = m.balls.findIndex(b => b.id === id);
     if (idx < 0) return;
     const wasCurrent = idx === m.turnIdx;
@@ -495,6 +655,11 @@ const Game = {
     UI.toast(`${dispName(b)} left the match`);
     UI.renderPlayerList();
     if (wasCurrent && m.mode === 'idle') this.afterTurn();
+  },
+
+  drainLeaves() {
+    const m = this.match;
+    for (const id of m.leavers.splice(0)) this.playerLeft(id);
   },
 
   // ---- render loop ----
@@ -521,6 +686,8 @@ const Game = {
 
     if (m.mode === 'live' && m.sim) {
       if (m.sim.tick(dt)) this.finishLiveTurn();
+    } else if (m.mode === 'livewatch' && m.sim) {
+      if (m.sim.tick(dt)) this.finishWatchTurn();
     } else if ((m.mode === 'replay' || m.mode === 'bestplay') && m.replay) {
       this.stepReplay(dt);
     } else if (m.mode === 'end' && m.endPhase) {
@@ -540,7 +707,7 @@ const Game = {
     this.updateTurnSub();
 
     // bars visible when balls are at rest, hidden while they move
-    const barsTarget = (m.mode === 'live' || m.mode === 'replay' || m.mode === 'bestplay') ? 0 : 1;
+    const barsTarget = (m.mode === 'live' || m.mode === 'livewatch' || m.mode === 'replay' || m.mode === 'bestplay') ? 0 : 1;
     m.barsAlpha += (barsTarget - m.barsAlpha) * Math.min(1, dt * 8);
 
     // aim arrow while dragging
