@@ -132,6 +132,16 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // ---- tournament length (host lobby setting) ----
+  document.querySelectorAll('#tourney-select button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!Net.isHost || UI.inMatch) return;
+      UI.lobby.tourney = +btn.dataset.len;
+      if (UI.lobby.tourney) UI.lobby.tableId = 'random'; // rerolled every match
+      UI.hostBroadcastLobby();
+    });
+  });
+
   // ---- best play replay is skippable ----
   document.getElementById('bestplay-skip').addEventListener('click', () => Game.skipBestPlay());
 
@@ -216,6 +226,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.target === helpModal) helpModal.classList.remove('show');
   });
   document.getElementById('btn-again').addEventListener('click', () => {
+    // mid-tournament the same button chains straight into the next match
+    if (UI.tourney && UI.tourney.no < UI.tourney.len) return UI.hostNextMatch();
     Net.broadcast({ t: 'lobbyBack' });
     UI.backToLobby();
   });

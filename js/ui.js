@@ -18,6 +18,7 @@ const UI = {
   },
   lobby: { players: [], tableId: 'random' },
   inMatch: false,
+  tourney: null, // {len, no, scores:{id:pts}, roster:{id:{name,emoji,color,isBot}}}
 
   showScreen(name) {
     document.querySelectorAll('.screen').forEach(s =>
@@ -100,6 +101,7 @@ const UI = {
       players: [{ id: Net.myId, ...this.profile, ready: false, isHost: true }],
       tableId: 'random',
       borderDmg: 'low', // none | low | high — low keeps matches from ending too fast
+      tourney: 0,       // 0 = single match | 3 | 5 | 8
     };
     this.renderLobby();
     this.showScreen('lobby');
@@ -229,7 +231,8 @@ const UI = {
         lab.textContent = name;
         d.append(thumbEl, lab);
         d.addEventListener('click', () => {
-          if (!Net.isHost) return;
+          // tournaments always roll a random table per match
+          if (!Net.isHost || (this.lobby.tourney || 0) > 0) return;
           this.lobby.tableId = id;
           this.hostBroadcastLobby();
         });
@@ -248,11 +251,17 @@ const UI = {
     }
     tsel.querySelectorAll('.table-opt').forEach(d =>
       d.classList.toggle('sel', d.dataset.id === this.lobby.tableId));
-    tsel.classList.toggle('locked', !Net.isHost);
+    tsel.classList.toggle('locked', !Net.isHost || (this.lobby.tourney || 0) > 0);
 
     // border damage selector (host picks; guests see the choice)
     document.querySelectorAll('#dmg-select button').forEach(btn => {
       btn.classList.toggle('sel', btn.dataset.lvl === (this.lobby.borderDmg || 'low'));
+      btn.disabled = !Net.isHost;
+    });
+
+    // tournament length (host picks; guests see the choice)
+    document.querySelectorAll('#tourney-select button').forEach(btn => {
+      btn.classList.toggle('sel', +btn.dataset.len === (this.lobby.tourney || 0));
       btn.disabled = !Net.isHost;
     });
 
@@ -266,7 +275,8 @@ const UI = {
     const allReady = this.lobby.players.length > 0 && this.lobby.players.every(p => p.ready);
     startBtn.style.display = Net.isHost ? '' : 'none';
     startBtn.disabled = !allReady;
-    startBtn.textContent = this.lobby.players.length === 1 ? 'Start (solo test)' : 'Start match';
+    startBtn.textContent = this.lobby.players.length === 1 ? 'Start (solo test)'
+      : (this.lobby.tourney || 0) > 0 ? 'Start tournament' : 'Start match';
     document.getElementById('lobby-hint').textContent = Net.isHost
       ? (allReady ? 'All set — start when you want!' : 'Share the invite link 🔗. Everyone must be ready.')
       : 'Waiting for the host to start…';
@@ -351,7 +361,25 @@ const UI = {
   hostStartMatch() {
     const players = this.lobby.players;
     if (!players.length || !players.every(p => p.ready)) return;
-    let tableId = this.lobby.tableId;
+    let tour = null;
+    if ((this.lobby.tourney || 0) > 0) {
+      const roster = {};
+      players.forEach(p => { roster[p.id] = { name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot }; });
+      tour = { len: this.lobby.tourney, no: 1, scores: {}, roster };
+    }
+    this.hostLaunch(tour);
+  },
+
+  // next tournament match: straight from the ranking screen, no re-ready
+  hostNextMatch() {
+    const t = this.tourney;
+    if (!Net.isHost || !t || t.no >= t.len || !this.inMatch) return;
+    this.hostLaunch({ len: t.len, no: t.no + 1, scores: t.scores, roster: t.roster });
+  },
+
+  hostLaunch(tour) {
+    const players = this.lobby.players;
+    let tableId = tour ? 'random' : this.lobby.tableId; // tournaments reroll every match
     if (tableId === 'random') {
       tableId = TABLES[Math.floor(Math.random() * TABLES.length)].id;
     }
@@ -359,6 +387,7 @@ const UI = {
     const order = shuffle([...players]).map(p => ({ id: p.id, name: p.name, emoji: p.emoji, color: p.color, isBot: !!p.isBot, level: p.level }));
     const spawns = shuffle([...table.spawns]).slice(0, order.length);
     const d = { tableId, order, spawns, borderDmg: this.lobby.borderDmg || 'low' };
+    if (tour) d.tour = tour;
     Net.matchLocked = true;
     Net.broadcast({ t: 'start', d });
     this.handleStart(d);
@@ -366,6 +395,10 @@ const UI = {
 
   handleStart(d) {
     this.inMatch = true;
+    this.tourney = d.tour || null;
+    document.getElementById('roulette-title').textContent = d.tour
+      ? `Match ${d.tour.no} of ${d.tour.len} — who starts?`
+      : 'Who starts?';
     this.showScreen('roulette');
     const grid = document.getElementById('roulette-grid');
     const result = document.getElementById('roulette-result');
@@ -515,28 +548,119 @@ const UI = {
 
   // ---- ranking ----
 
+  TOURNEY_POINTS: [6, 4, 2, 1],
+
   showRanking(ranked) {
     this.showScreen('ranking');
+    const t = this.tourney;
+    const final = t && t.no >= t.len;
+    document.getElementById('ranking-title').textContent =
+      t ? `Match ${t.no} of ${t.len} over` : 'Match over';
     const list = document.getElementById('ranking-list');
     list.innerHTML = '';
     const medals = ['🏆', '🥈', '🥉'];
     ranked.forEach((b, i) => {
+      const pts = this.TOURNEY_POINTS[i] || 0;
+      if (t) t.scores[b.id] = (t.scores[b.id] || 0) + pts;
       const div = document.createElement('div');
       div.className = 'rank-row' + (i === 0 ? ' winner' : '');
       div.innerHTML = `
         <span class="rank-pos">${medals[i] || (i + 1) + 'º'}</span>
         <span class="p-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>
         <span class="p-name">${esc(dispName(b))}${b.isBot ? ' <i class="bot-tag">BOT</i>' : ''}</span>
-        <span class="rank-note">${b.dead ? 'Survived ' + b.deathTurn + ' turn' + (b.deathTurn === 1 ? '' : 's') : (i === 0 ? 'WINNER' : 'Survived')}</span>`;
+        <span class="rank-note">${b.dead ? 'Survived ' + b.deathTurn + ' turn' + (b.deathTurn === 1 ? '' : 's') : (i === 0 ? 'WINNER' : 'Survived')}</span>
+        ${t ? `<span class="rank-pts">+${pts}</span>` : ''}`;
       list.appendChild(div);
     });
-    document.getElementById('btn-again').style.display = Net.isHost ? '' : 'none';
-    document.getElementById('ranking-hint').textContent =
-      Net.isHost ? '' : 'The host can bring everyone back to the lobby.';
+
+    // tournament standings under the match result (every device computes the
+    // same totals; the host also ships them with each next-match start)
+    document.getElementById('tourney-box').style.display = t ? 'block' : 'none';
+    if (t) {
+      document.getElementById('tourney-title').textContent =
+        final ? '🏆 Final standings' : `🏆 Tournament · match ${t.no} of ${t.len}`;
+      const tl = document.getElementById('tourney-list');
+      tl.innerHTML = '';
+      Object.keys(t.scores)
+        .map(id => ({ pts: t.scores[id], p: t.roster[id] }))
+        .filter(r => r.p)
+        .sort((a, b) => b.pts - a.pts)
+        .forEach((r, i) => {
+          const div = document.createElement('div');
+          div.className = 'rank-row' + (final && i === 0 ? ' winner' : '');
+          div.innerHTML = `
+            <span class="rank-pos">${final ? (medals[i] || (i + 1) + 'º') : (i + 1) + 'º'}</span>
+            <span class="p-ball${r.p.isBot ? ' bot' : ''}" style="background:${r.p.color}">${r.p.emoji}</span>
+            <span class="p-name">${esc(dispName(r.p))}${r.p.isBot ? ' <i class="bot-tag">BOT</i>' : ''}</span>
+            <span class="rank-pts">${r.pts} pts</span>`;
+          tl.appendChild(div);
+        });
+      if (final) {
+        this.confetti();
+        SFX.fanfare();
+      }
+    }
+
+    const againBtn = document.getElementById('btn-again');
+    againBtn.style.display = Net.isHost ? '' : 'none';
+    againBtn.textContent = t && !final ? 'Next match ▶' : 'Back to lobby';
+    document.getElementById('ranking-hint').textContent = Net.isHost ? ''
+      : t && !final ? 'Get ready — the host starts the next match.'
+      : 'The host can bring everyone back to the lobby.';
+  },
+
+  // full-screen confetti burst for the tournament champion
+  confetti() {
+    const c = document.getElementById('confetti');
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+    c.classList.add('show');
+    const ctx = c.getContext('2d');
+    const colors = PLAYER_COLORS.concat(['#ffd84d', '#ffffff', '#41ff5a']);
+    const pieces = Array.from({ length: 150 }, (_, i) => ({
+      x: Math.random() * c.width,
+      y: -30 - Math.random() * c.height * 0.7, // staggered start = longer rain
+      w: 5 + Math.random() * 7,
+      h: 8 + Math.random() * 10,
+      vy: 140 + Math.random() * 180,
+      vx: (Math.random() * 2 - 1) * 40,
+      rot: Math.random() * Math.PI,
+      vr: (Math.random() * 2 - 1) * 7,
+      sway: Math.random() * Math.PI * 2,
+      color: colors[i % colors.length],
+    }));
+    let last = performance.now();
+    const step = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      ctx.clearRect(0, 0, c.width, c.height);
+      let alive = false;
+      for (const p of pieces) {
+        p.y += p.vy * dt;
+        p.x += (p.vx + Math.sin(now / 350 + p.sway) * 45) * dt;
+        p.rot += p.vr * dt;
+        if (p.y > c.height + 30) continue;
+        alive = true;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+      if (alive && c.classList.contains('show')) requestAnimationFrame(step);
+      else {
+        ctx.clearRect(0, 0, c.width, c.height);
+        c.classList.remove('show');
+      }
+    };
+    requestAnimationFrame(step);
   },
 
   backToLobby() {
     this.inMatch = false;
+    this.tourney = null;
+    document.getElementById('confetti').classList.remove('show');
     Game.match = null;
     Net.matchLocked = false;
     if (Net.isHost) {

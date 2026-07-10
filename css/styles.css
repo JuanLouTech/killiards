@@ -343,8 +343,8 @@ input[type='text']:focus { border-color: var(--neon); }
   background: #04050a;
 }
 
-#dmg-select { display: flex; gap: 8px; }
-#dmg-select button {
+#dmg-select, #tourney-select { display: flex; gap: 8px; }
+#dmg-select button, #tourney-select button {
   flex: 1;
   background: #070812;
   border: 2px solid var(--line);
@@ -356,9 +356,9 @@ input[type='text']:focus { border-color: var(--neon); }
   padding: 10px 0;
   cursor: pointer;
 }
-#dmg-select button.sel { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 12px rgba(65, 255, 90, 0.25); }
-#dmg-select button:disabled { cursor: default; opacity: 0.75; }
-#dmg-select button:disabled.sel { opacity: 1; }
+#dmg-select button.sel, #tourney-select button.sel { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 12px rgba(65, 255, 90, 0.25); }
+#dmg-select button:disabled, #tourney-select button:disabled { cursor: default; opacity: 0.75; }
+#dmg-select button:disabled.sel, #tourney-select button:disabled.sel { opacity: 1; }
 
 /* ---------- roulette ---------- */
 
@@ -735,6 +735,28 @@ input[type='text']:focus { border-color: var(--neon); }
 .rank-pos { font-size: 22px; width: 40px; text-align: center; font-weight: 900; }
 .rank-note { font-size: 11px; color: var(--dim); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
 .rank-row.winner .rank-note { color: var(--neon); }
+.rank-pts { font-size: 14px; font-weight: 900; color: var(--neon); flex: none; }
+
+/* tournament standings under the match ranking */
+#tourney-box { display: none; margin-bottom: 20px; }
+#tourney-box h3 {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 4px 0 12px;
+  color: #ffd84d;
+  text-shadow: 0 0 14px rgba(255, 216, 77, 0.35);
+}
+#tourney-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* confetti overlay for the tournament champion */
+#confetti {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+}
+#confetti.show { display: block; }
 
 /* ---------- toast & fatal ---------- */
 
