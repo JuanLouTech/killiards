@@ -160,7 +160,9 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   check('confetti fires on every device',
     (await host.evaluate(() => document.getElementById('confetti').classList.contains('show'))) &&
     (await guest.evaluate(() => document.getElementById('confetti').classList.contains('show'))));
-  check('champion earned the right total', Math.max(totals.Ana, totals.Bob) === 16);
+  // 2-1 split → 16/14, clean sweep → 18/12; either way 30 points were dealt
+  check('champion earned the right total',
+    totals.Ana + totals.Bob === 30 && Math.max(totals.Ana, totals.Bob) >= 16);
   check('host button returns to the lobby', await host.evaluate(() =>
     document.getElementById('btn-again').textContent === 'Back to lobby'));
 

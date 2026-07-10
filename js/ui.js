@@ -23,6 +23,10 @@ const UI = {
   showScreen(name) {
     document.querySelectorAll('.screen').forEach(s =>
       s.classList.toggle('active', s.id === 'screen-' + name));
+    // chat travels with the room: the game screen has its own toggle in the
+    // controls, every other room screen gets the floating one
+    document.getElementById('chat-fab').classList.toggle('show',
+      ['lobby', 'roulette', 'ranking'].includes(name));
     if (name === 'game') {
       Renderer.resize();
       Controls.resize();
@@ -101,7 +105,7 @@ const UI = {
       players: [{ id: Net.myId, ...this.profile, ready: false, isHost: true }],
       tableId: 'random',
       borderDmg: 'low', // none | low | high — low keeps matches from ending too fast
-      tourney: 0,       // 0 = single match | 3 | 5 | 8
+      tourney: 0,       // 0 = single match | 3 | 5 | 7
     };
     this.renderLobby();
     this.showScreen('lobby');
@@ -453,9 +457,14 @@ const UI = {
       let fx = '';
       if (b.storedPower && POWER_KINDS[b.storedPower]) fx += POWER_KINDS[b.storedPower].emoji;
       if (b.fxNow && POWER_KINDS[b.fxNow]) fx += POWER_KINDS[b.fxNow].emoji;
+      // energy as of the end of the last turn, same color ramp as the table bars
+      const pct = Math.max(0, Math.min(1, b.hp / PHYS.MAX_HP));
+      const hpBar = b.dead ? '' :
+        `<span class="tp-hp"><i style="width:${Math.round(pct * 100)}%;background:hsl(${Math.round(pct * 115)},90%,48%)"></i></span>`;
       pill.innerHTML =
         `<span class="tp-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>` +
         `<span class="tp-name">${esc(dispName(b))}${b.id === Net.myId ? ' <em>you</em>' : ''}</span>` +
+        hpBar +
         (fx ? `<span class="tp-fx">${fx}</span>` : '');
       el.appendChild(pill);
     });
@@ -500,9 +509,10 @@ const UI = {
   },
 
   renderChatBadge() {
-    const el = document.getElementById('chat-unread');
-    el.textContent = this.chatUnread > 9 ? '9+' : this.chatUnread;
-    el.classList.toggle('hidden', this.chatUnread === 0);
+    document.querySelectorAll('.chat-unread').forEach(el => {
+      el.textContent = this.chatUnread > 9 ? '9+' : this.chatUnread;
+      el.classList.toggle('hidden', this.chatUnread === 0);
+    });
   },
 
   renderChat() {

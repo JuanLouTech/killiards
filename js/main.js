@@ -112,6 +112,7 @@ window.addEventListener('DOMContentLoaded', () => {
     UI.closeChat(); // back to the game right away
   };
   document.getElementById('chat-toggle').addEventListener('click', () => UI.openChat());
+  document.getElementById('chat-fab').addEventListener('click', () => UI.openChat());
   document.getElementById('chat-close').addEventListener('click', () => UI.closeChat());
   document.getElementById('chat-send').addEventListener('click', sendChat);
   chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });

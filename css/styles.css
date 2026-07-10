@@ -521,6 +521,15 @@ input[type='text']:focus { border-color: var(--neon); }
   text-overflow: ellipsis;
 }
 .turn-pill .tp-name em { font-style: normal; color: var(--dim); font-size: 9px; }
+.turn-pill .tp-hp {
+  flex: none;
+  width: 30px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.turn-pill .tp-hp i { display: block; height: 100%; border-radius: 3px; }
 .turn-pill .tp-fx { flex: none; font-size: 11px; }
 .turn-pill.current {
   border-color: var(--neon);
@@ -576,7 +585,7 @@ input[type='text']:focus { border-color: var(--neon); }
   font-size: 16px;
   line-height: 1;
 }
-#chat-unread {
+.chat-unread {
   position: absolute;
   top: -6px;
   right: -6px;
@@ -590,7 +599,19 @@ input[type='text']:focus { border-color: var(--neon); }
   line-height: 1;
   text-align: center;
 }
-#chat-unread.hidden { display: none; }
+.chat-unread.hidden { display: none; }
+
+/* floating chat button on the non-game room screens */
+#chat-fab {
+  display: none;
+  position: fixed;
+  right: 14px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 30;
+  font-size: 16px;
+  line-height: 1;
+}
+#chat-fab.show { display: block; }
 
 .chat-box { position: relative; }
 #chat-close { position: absolute; top: 14px; right: 14px; color: var(--dim); }
