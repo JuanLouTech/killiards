@@ -207,11 +207,28 @@ const check = (name, cond) => { console.log((cond ? 'ok: ' : 'FAIL: ') + name); 
   check('the bot got a turn and auto-played it', botPlayed);
   console.log('hp after 4 turns:', JSON.stringify((await state(host)).balls));
 
-  // emotes: g2 reacts, everyone (host relays) sees the floater
-  await g2.click('#emote-bar .emote-btn');
-  await host.waitForFunction(() => Renderer.floaters.length > 0, null, { timeout: 5000 });
-  check('emote relayed to host', true);
-  check('emote relayed to other guest', await g1.evaluate(() => Renderer.floaters.length > 0));
+  // chat: g2 sends a message, everyone (host relays) logs it + sees the toast
+  await g2.evaluate(() => UI.openChat());
+  await g2.fill('#chat-input', 'good shot!');
+  await g2.click('#chat-send');
+  await host.waitForFunction(() => UI.chat.length > 0, null, { timeout: 5000 });
+  check('chat relayed to host', (await host.evaluate(() => UI.chat[UI.chat.length - 1].text)) === 'good shot!');
+  check('chat relayed to other guest', await g1.evaluate(() => UI.chat.length > 0));
+  check('chat toast shown on a watcher', await g1.evaluate(() =>
+    document.getElementById('chat-toast').classList.contains('show')));
+  check('chat window closes on send', await g2.evaluate(() => !UI.chatIsOpen()));
+
+  // aim arrow: a pull too short to fire must not draw an arrow
+  check('no aim arrow on a shot-cancelling drag', await host.evaluate(() => {
+    Controls.aiming = true;
+    Controls.pull = { x: 2, y: 0 }; // mag > 1 but power ≤ MIN_POWER
+    const hidden = Controls.getAim() === null;
+    Controls.pull = { x: Controls.padMaxR() * 0.5, y: 0 };
+    const shown = Controls.getAim() !== null;
+    Controls.aiming = false;
+    Controls.pull = { x: 0, y: 0 };
+    return hidden && shown;
+  }));
 
   // damage bars visible again once idle (a bot may still be playing: wait)
   await host.waitForFunction(() => Game.match.mode === 'idle' && Game.match.barsAlpha > 0.8, null, { timeout: 30000 });

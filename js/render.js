@@ -11,7 +11,7 @@ const Renderer = {
   borderLayer: null,   // static glowing borders, pre-rendered per resize
   tableId: null,
   particles: [],
-  floaters: [],        // rising emote emojis
+  floaters: [],        // rising damage/heal numbers
   shakeMag: 0,
   lastT: 0,
   TELE_COLORS: ['#3ec6ff', '#ff6bd6', '#ffb14d'],
@@ -114,10 +114,6 @@ const Renderer = {
     this.addShake(14);
   },
 
-  spawnEmote(x, y, emoji) {
-    this.floaters.push({ x, y, emoji, life: 0, ttl: 1.7 });
-  },
-
   // Floating damage/heal number over a ball: red "-12" rising and fading,
   // green "+25" for heals (negative dmg). Bigger hits draw bigger.
   spawnDamage(x, y, dmg) {
@@ -208,7 +204,7 @@ const Renderer = {
     });
     ctx.globalAlpha = 1;
 
-    // floating emotes & damage numbers (drawn above everything)
+    // floating damage numbers (drawn above everything)
     this.floaters = this.floaters.filter(f => {
       f.life += dt;
       if (f.life >= f.ttl) return false;
@@ -219,17 +215,12 @@ const Renderer = {
       ctx.globalAlpha = a;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      if (f.text) {
-        ctx.font = `900 ${Math.round(f.size * (0.6 + pop * 0.4))}px sans-serif`;
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-        ctx.strokeText(f.text, f.x, f.y);
-        ctx.fillStyle = f.color;
-        ctx.fillText(f.text, f.x, f.y);
-      } else {
-        ctx.font = `${Math.round(52 * (0.5 + pop * 0.5))}px sans-serif`;
-        ctx.fillText(f.emoji, f.x, f.y);
-      }
+      ctx.font = `900 ${Math.round(f.size * (0.6 + pop * 0.4))}px sans-serif`;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
       return true;
     });
     ctx.globalAlpha = 1;

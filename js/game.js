@@ -66,15 +66,8 @@ const Game = {
       const k = POWER_KINDS[meB.fxNow];
       UI.toast(`${k.emoji} ${k.name} strikes: your ball is ${meB.fxNow === 'tiny' ? 'tiny & light' : 'heavy & sluggish'} this turn!`);
     }
-    let icon = cur.storedPower ? ` ${POWER_KINDS[cur.storedPower].emoji}` : '';
-    if (cur.fxNow) icon += ` ${POWER_KINDS[cur.fxNow].emoji}`;
-    Controls.setTurn({
-      active: mine,
-      color: cur.color,
-      message: mine
-        ? `<b style="color:${cur.color}">Your turn!</b>${icon}`
-        : `Turn: <b style="color:${cur.color}">${esc(dispName(cur))}</b>${icon}`,
-    });
+    Controls.setTurn({ active: mine, color: cur.color });
+    UI.renderPlayerList();
     // a recording for this turn may already be waiting (it arrived while we
     // were still replaying the previous one): play it now
     if (m.turnQueue.length) {
@@ -131,7 +124,7 @@ const Game = {
     // simulation settles, and until then their tables sit still
     Net.send({ t: 'shot', d: { tc: m.turnCount } });
     SFX.shoot(input.power);
-    Controls.setTurn({ active: false, color: shooter.color, message: '&nbsp;' });
+    Controls.setTurn({ active: false, color: shooter.color });
   },
 
   // Another device fired its shot and is busy simulating: show SIMULATING…
@@ -304,8 +297,8 @@ const Game = {
     else if (ev.victims && ev.victims.length) Renderer.addShake(1.5);
   },
 
-  // Status line under the turn banner: shot clock on your turn, SIMULATING…
-  // for everyone watching a recorded/live turn play out.
+  // Status line: shot clock on your turn, SIMULATING… for everyone watching
+  // a recorded/live turn play out. (Turn order lives in the player list.)
   updateTurnSub() {
     const m = this.match;
     let text = '', cls = '';
@@ -320,31 +313,12 @@ const Game = {
       text = 'SIMULATING…';
       cls = 'simulating';
     }
-    // who plays after this turn — tiny/heavy pickups land on that turn, so
-    // knowing the order is part of the strategy
-    if (m && m.mode === 'idle' && m.balls.filter(b => !b.dead).length > 1) {
-      let idx = m.turnIdx;
-      do { idx = (idx + 1) % m.balls.length; } while (m.balls[idx].dead);
-      const nb = m.balls[idx];
-      const next = `Next: ${nb.emoji}${nb.name ? ' ' + nb.name : ''}`;
-      text = text ? `${text}  ·  ${next}` : next;
-    }
     if (text !== this._subText || cls !== this._subCls) {
       this._subText = text;
       this._subCls = cls;
       const el = document.getElementById('turn-sub');
       if (el) { el.textContent = text; el.className = cls; }
     }
-  },
-
-  // ---- emotes ----
-
-  showEmote(d) {
-    const m = this.match;
-    if (!m) return;
-    const b = m.balls.find(x => x.id === d.id);
-    if (b) Renderer.spawnEmote(b.x, b.y - PHYS.R - 14, d.e);
-    SFX.pop();
   },
 
   // ---- end of turn: authoritative state, bar animation, deaths ----
@@ -519,6 +493,7 @@ const Game = {
       Renderer.spawnExplosion(b.x, b.y, b.color);
     }
     UI.toast(`${dispName(b)} left the match`);
+    UI.renderPlayerList();
     if (wasCurrent && m.mode === 'idle') this.afterTurn();
   },
 

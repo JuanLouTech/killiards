@@ -16,7 +16,7 @@ const UI = {
         : PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)],
     };
   },
-  lobby: { players: [], tableId: TABLES[0].id },
+  lobby: { players: [], tableId: 'random' },
   inMatch: false,
 
   showScreen(name) {
@@ -98,7 +98,7 @@ const UI = {
     Net.isHost = true;
     this.lobby = {
       players: [{ id: Net.myId, ...this.profile, ready: false, isHost: true }],
-      tableId: TABLES[0].id,
+      tableId: 'random',
       borderDmg: 'low', // none | low | high — low keeps matches from ending too fast
     };
     this.renderLobby();
@@ -403,6 +403,101 @@ const UI = {
       }
     };
     setTimeout(stepFn, 700);
+  },
+
+  // ---- in-game player list (turn order; green pill = playing now) ----
+
+  renderPlayerList() {
+    const el = document.getElementById('player-list');
+    const m = Game.match;
+    if (!el) return;
+    el.innerHTML = '';
+    if (!m) return;
+    m.balls.forEach((b, i) => {
+      const cur = i === m.turnIdx && !b.dead;
+      const pill = document.createElement('div');
+      pill.className = 'turn-pill' + (cur ? ' current' : '') + (b.dead ? ' dead' : '');
+      let fx = '';
+      if (b.storedPower && POWER_KINDS[b.storedPower]) fx += POWER_KINDS[b.storedPower].emoji;
+      if (b.fxNow && POWER_KINDS[b.fxNow]) fx += POWER_KINDS[b.fxNow].emoji;
+      pill.innerHTML =
+        `<span class="tp-ball${b.isBot ? ' bot' : ''}" style="background:${b.color}">${b.emoji}</span>` +
+        `<span class="tp-name">${esc(dispName(b))}${b.id === Net.myId ? ' <em>you</em>' : ''}</span>` +
+        (fx ? `<span class="tp-fx">${fx}</span>` : '');
+      el.appendChild(pill);
+    });
+  },
+
+  // ---- chat (replaces emotes: replays lag real time, so reactions lost
+  // their context — text keeps it) ----
+
+  chat: [],        // {name, emoji, color, text}
+  chatUnread: 0,
+
+  chatIsOpen() {
+    return document.getElementById('chat-modal').classList.contains('show');
+  },
+
+  chatPlayer(id) {
+    return (Game.match && Game.match.balls.find(b => b.id === id)) ||
+      this.lobby.players.find(p => p.id === id) || null;
+  },
+
+  addChat(d) {
+    const p = this.chatPlayer(d.id);
+    if (!p) return;
+    const msg = { name: dispName(p), emoji: p.emoji, color: p.color, text: String(d.text).slice(0, 120) };
+    this.chat.push(msg);
+    if (this.chat.length > 60) this.chat.shift();
+    SFX.pop();
+    if (this.chatIsOpen()) {
+      this.renderChat();
+      return;
+    }
+    if (d.id !== Net.myId) {
+      this.chatUnread++;
+      this.renderChatBadge();
+    }
+    // brief preview, like the power-up toasts — tap it to open the full chat
+    const el = document.getElementById('chat-toast');
+    el.innerHTML = `<b style="color:${msg.color}">${msg.emoji} ${esc(msg.name)}</b> ${esc(msg.text)}`;
+    el.classList.add('show');
+    clearTimeout(this._chatToastT);
+    this._chatToastT = setTimeout(() => el.classList.remove('show'), 3400);
+  },
+
+  renderChatBadge() {
+    const el = document.getElementById('chat-unread');
+    el.textContent = this.chatUnread > 9 ? '9+' : this.chatUnread;
+    el.classList.toggle('hidden', this.chatUnread === 0);
+  },
+
+  renderChat() {
+    const log = document.getElementById('chat-log');
+    log.innerHTML = this.chat.length ? '' : '<p class="hint">No messages yet — say hi!</p>';
+    this.chat.forEach(m => {
+      const div = document.createElement('div');
+      div.className = 'chat-msg';
+      div.innerHTML = `<b style="color:${m.color}">${m.emoji} ${esc(m.name)}</b> ${esc(m.text)}`;
+      log.appendChild(div);
+    });
+    log.scrollTop = log.scrollHeight;
+  },
+
+  openChat() {
+    this.chatUnread = 0;
+    this.renderChatBadge();
+    this.renderChat();
+    document.getElementById('chat-modal').classList.add('show');
+    document.getElementById('chat-toast').classList.remove('show');
+    // don't force the keyboard up on touch screens
+    if (!window.matchMedia('(pointer: coarse)').matches) {
+      document.getElementById('chat-input').focus();
+    }
+  },
+
+  closeChat() {
+    document.getElementById('chat-modal').classList.remove('show');
   },
 
   // ---- best play banner (over the game canvas, before the ranking) ----

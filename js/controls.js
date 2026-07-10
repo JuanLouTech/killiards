@@ -7,7 +7,8 @@ const Controls = {
   spinCanvas: null,
   spinCtx: null,
   hintEl: null,
-  bannerEl: null,
+
+  MIN_POWER: 0.08, // pulls weaker than this cancel the shot on release
 
   active: false,
   color: '#3b82f6',
@@ -24,7 +25,6 @@ const Controls = {
     this.spinCanvas = document.getElementById('spin-canvas');
     this.spinCtx = this.spinCanvas.getContext('2d');
     this.hintEl = document.getElementById('pad-hint');
-    this.bannerEl = document.getElementById('turn-banner');
 
     this.bigCanvas = document.getElementById('spin-big');
     this.bigCtx = this.bigCanvas.getContext('2d');
@@ -85,7 +85,7 @@ const Controls = {
       this.aiming = false;
       const power = this.power();
       const mag = Math.hypot(this.pull.x, this.pull.y);
-      if (power > 0.08 && mag > 1 && this.onShoot) {
+      if (power > this.MIN_POWER && mag > 1 && this.onShoot) {
         // slingshot: shoot opposite to the pull direction
         const dx = -this.pull.x / mag;
         const dy = -this.pull.y / mag;
@@ -110,12 +110,16 @@ const Controls = {
     return Math.min(1, Math.hypot(this.pull.x, this.pull.y) / this.padMaxR());
   },
 
-  // Current aim in table-space direction (y axis matches screen). Null if idle.
+  // Current aim in table-space direction (y axis matches screen). Null if
+  // idle, or while the pull is so short that releasing would cancel the shot
+  // (no arrow = this release won't fire).
   getAim() {
     if (!this.aiming) return null;
     const mag = Math.hypot(this.pull.x, this.pull.y);
     if (mag < 1) return null;
-    return { dx: -this.pull.x / mag, dy: -this.pull.y / mag, power: this.power() };
+    const power = this.power();
+    if (power <= this.MIN_POWER) return null;
+    return { dx: -this.pull.x / mag, dy: -this.pull.y / mag, power };
   },
 
   // Small widget is a live indicator + button; precise editing happens in a
@@ -224,14 +228,13 @@ const Controls = {
     ctx.stroke();
   },
 
-  setTurn({ active, color, message }) {
+  setTurn({ active, color }) {
     this.active = active;
     if (color) this.color = color;
     this.spin = { x: 0, y: 0 };
     this.pull = { x: 0, y: 0 };
     this.aiming = false;
     if (!active) this.closeSpinModal();
-    this.bannerEl.innerHTML = message;
     if (active) {
       this.hintEl.textContent = 'Drag & release to shoot';
       this.hintEl.classList.remove('hidden');

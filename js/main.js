@@ -90,29 +90,34 @@ window.addEventListener('DOMContentLoaded', () => {
     Game.onShotFired(d);
   });
 
-  // ---- emotes: everyone can react at any time during a match ----
-  Net.on('emote', (d, from) => {
-    if (Net.isHost) Net.broadcast({ t: 'emote', d }, from);
-    Game.showEmote(d);
+  // ---- chat: anyone can talk at any time; the host relays ----
+  Net.on('chat', (d, from) => {
+    if (Net.isHost) Net.broadcast({ t: 'chat', d }, from);
+    UI.addChat(d);
   });
 
-  const EMOTES = ['😂', '😮', '🔥', '👏', '😱', '🤏'];
-  const emoteBar = document.getElementById('emote-bar');
-  let lastEmote = 0;
-  EMOTES.forEach(e => {
-    const b = document.createElement('button');
-    b.className = 'emote-btn';
-    b.textContent = e;
-    b.addEventListener('click', () => {
-      if (!Game.match || Game.match.mode === 'over') return;
-      const now = Date.now();
-      if (now - lastEmote < 700) return; // rate limit
-      lastEmote = now;
-      const d = { id: Net.myId, e };
-      Net.send({ t: 'emote', d });
-      Game.showEmote(d);
-    });
-    emoteBar.appendChild(b);
+  const chatModal = document.getElementById('chat-modal');
+  const chatInput = document.getElementById('chat-input');
+  let lastChat = 0;
+  const sendChat = () => {
+    const text = chatInput.value.trim().slice(0, 120);
+    if (!text) return;
+    const now = Date.now();
+    if (now - lastChat < 800) return; // rate limit
+    lastChat = now;
+    chatInput.value = '';
+    const d = { id: Net.myId, text };
+    Net.send({ t: 'chat', d });
+    UI.addChat(d);
+    UI.closeChat(); // back to the game right away
+  };
+  document.getElementById('chat-toggle').addEventListener('click', () => UI.openChat());
+  document.getElementById('chat-close').addEventListener('click', () => UI.closeChat());
+  document.getElementById('chat-send').addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+  document.getElementById('chat-toast').addEventListener('click', () => UI.openChat());
+  chatModal.addEventListener('pointerdown', (e) => {
+    if (e.target === chatModal) UI.closeChat();
   });
 
   // ---- bots (host adds them in the lobby) ----

@@ -103,7 +103,7 @@
       </div>
     </div>
     <div id="controls">
-      <div id="turn-banner"></div>
+      <div id="player-list"></div>
       <div id="turn-sub"></div>
       <div id="pad-area">
         <canvas id="pad-canvas"></canvas>
@@ -114,9 +114,9 @@
         <div id="spin-wrap"><canvas id="spin-canvas"></canvas></div>
         <span class="spin-hint">tap to set</span>
       </div>
-      <div id="emote-bar"></div>
       <button id="hand-toggle" class="mini" title="Swap controls side">⇄</button>
       <button id="help-toggle" class="mini" title="How to play">?</button>
+      <button id="chat-toggle" class="mini" title="Chat">💬<span id="chat-unread" class="hidden"></span></button>
     </div>
   </div>
 
@@ -134,11 +134,24 @@
         <li>🎁 <b>Power-ups</b> appear on the table for a few turns, and whichever ball touches one takes it. 💥⚡ store and fire on that player's <b>next shot</b>. 💚☠️ heal or hurt <b>instantly</b>. 🐜🪨 make the ball tiny or heavy for the <b>whole next turn</b> — check who plays next and shove your enemies wisely!</li>
         <li>🌀 Some tables have <b>teleporters</b> (matching rings) and <b>pushable barriers</b> (blue squares) you can launch at people.</li>
         <li>🤖 The host can add up to 3 <b>bots</b> (yellow ring) in the lobby, and tap their chip to set the difficulty: <b>EASY / MID / HARD</b>. Hard bots simulate their shots — watch out.</li>
-        <li>😂 Tap the <b>emotes</b> under the pad to react at any time.</li>
+        <li>💬 Tap the <b>chat</b> button to talk. New messages pop up briefly — open the chat to read them all.</li>
         <li>🎲 Tables have different obstacles; the host picks one (or rolls Random) before the match.</li>
       </ul>
       <div class="btn-row">
         <button id="help-close" class="big-btn">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT MODAL -->
+  <div id="chat-modal">
+    <div class="spin-modal-box chat-box">
+      <h3>Chat</h3>
+      <button id="chat-close" class="mini" title="Close">✕</button>
+      <div id="chat-log"></div>
+      <div class="chat-row">
+        <input id="chat-input" type="text" maxlength="120" placeholder="Message…" autocomplete="off">
+        <button id="chat-send" class="big-btn">Send</button>
       </div>
     </div>
   </div>
@@ -180,6 +193,7 @@
     <pre id="netlog-text"></pre>
   </div>
 
+  <div id="chat-toast"></div>
   <div id="toast"></div>
   <div id="fatal"><div class="panel center"><h2>Oops</h2><p></p><button class="big-btn">Back to start</button></div></div>
 
